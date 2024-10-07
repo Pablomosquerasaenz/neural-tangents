@@ -143,7 +143,7 @@ class ActivationTest(test_utils.NeuralTangentsTestCase):
       cov2 = jnp.reshape(cov2, (1, cov2.shape[0]))
       nngp = kernels.nngp
 
-      # TODO(schsam): Update cov1 and cov2 if we want to compose this kernel
+      # TODO: Update cov1 and cov2 if we want to compose this kernel
       # with other kernels.
       return kernels.replace(
           nngp=jnp.exp(-input_dim * gamma * (cov1 + cov2 - 2 * nngp)))
@@ -697,7 +697,7 @@ class AutodiffTest(test_utils.NeuralTangentsTestCase):
 
     def assert_close(x, y, tol=3e-5):
       if default_backend() == 'tpu':
-        # TODO(romann): understand why TPUs have high errors.
+        # TODO: understand why TPUs have high errors.
         tol = 0.21
       self.assertLess(
           jnp.max(jnp.abs(x - y)) / (jnp.mean(jnp.abs(x)) + jnp.mean(jnp.abs(y))),

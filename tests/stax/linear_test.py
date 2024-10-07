@@ -46,7 +46,7 @@ prandom.seed(1)
 
 
 @test_utils.product(
-    same_inputs=[True, False]
+    same_inputs=[True, False],
 )
 class FlattenTest(test_utils.NeuralTangentsTestCase):
 

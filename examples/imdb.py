@@ -99,7 +99,7 @@ def main(*args, use_dummy_data: bool = False, **kwargs) -> None:
 
 
 def _get_dummy_data(
-    mask_constant: float
+    mask_constant: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
   """Return dummy data for when downloading embeddings is not feasible."""
   n_train, n_test = 6, 6

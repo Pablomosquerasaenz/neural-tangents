@@ -44,7 +44,7 @@ def get_dataset(
     permute_train=False,
     do_flatten_and_normalize=True,
     data_dir=None,
-    input_key='image'
+    input_key='image',
 ):
   """Download, parse and process a dataset to unit scale and one-hot labels."""
   # Need this following http://cl/378185881 to prevent GPU test breakages.
@@ -133,9 +133,10 @@ def embed_glove(xs, glove_path, max_sentence_length=1000, mask_constant=1000.):
   xs = list(map(_decode, xs))
   tokenizer = tf.keras.preprocessing.text.Tokenizer()
   tokenizer.fit_on_texts(np.concatenate(xs))
-  glove_embedding_layer = _get_glove_embedding_layer(tokenizer,
-                                                     glove_path,
-                                                     max_sentence_length)
+  glove_embedding_layer = _get_glove_embedding_layer(
+      tokenizer,
+      glove_path,
+  )
 
   def embed(x):
     # Replace strings with sequences of integer tokens.
@@ -147,7 +148,8 @@ def embed_glove(xs, glove_path, max_sentence_length=1000, mask_constant=1000.):
         x_tok,
         max_sentence_length,
         padding='post',
-        truncating='post')
+        truncating='post',
+    )
 
     # Replace integer tokens with word embeddings.
     x_emb = glove_embedding_layer(x_tok).numpy()
@@ -160,7 +162,7 @@ def embed_glove(xs, glove_path, max_sentence_length=1000, mask_constant=1000.):
   return map(embed, xs)
 
 
-def _get_glove_embedding_layer(tokenizer, glove_path, max_sentence_length):
+def _get_glove_embedding_layer(tokenizer, glove_path):
   """Get a Keras embedding layer for a given GloVe embeddings.
 
   Adapted from https://keras.io/examples/pretrained_word_embeddings/.
@@ -171,9 +173,6 @@ def _get_glove_embedding_layer(tokenizer, glove_path, max_sentence_length):
 
     glove_path:
       path to the GloVe embedding file.
-
-    max_sentence_length:
-      pad/truncate embeddings to this length.
 
   Returns:
     Keras embedding layer for a given GloVe embeddings.
@@ -212,8 +211,8 @@ def _get_glove_embedding_layer(tokenizer, glove_path, max_sentence_length):
     embedding_layer = tf.keras.layers.Embedding(
         num_words, embedding_dim,
         embeddings_initializer=tf.keras.initializers.Constant(emb_mat),
-        input_length=max_sentence_length,
-        trainable=False)
+        trainable=False,
+    )
 
   return embedding_layer
 

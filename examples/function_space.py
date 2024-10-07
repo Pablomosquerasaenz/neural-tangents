@@ -57,7 +57,7 @@ def main(unused_argv):
   opt_init, opt_apply, get_params = optimizers.sgd(_LEARNING_RATE)
   state = opt_init(params)
 
-  # Create an mse loss function and a gradient function.
+  # Create a mse loss function and a gradient function.
   loss = lambda fx, y_hat: 0.5 * jnp.mean((fx - y_hat) ** 2)
   grad_loss = jit(grad(lambda params, x, y: loss(apply_fn(params, x), y)))
 

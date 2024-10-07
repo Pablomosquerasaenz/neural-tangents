@@ -104,7 +104,7 @@ Example:
 import enum
 import functools
 import operator
-from typing import Callable, Iterable, KeysView, Optional, TypeVar, Union
+from typing import Callable, Iterable, KeysView, TypeVar
 import warnings
 
 import jax
@@ -134,7 +134,6 @@ from jax.interpreters.ad import Zero
 import jax.numpy as jnp
 
 from jax.tree_util import tree_flatten
-from jax.tree_util import tree_map
 from jax.tree_util import tree_reduce
 from jax.tree_util import tree_structure
 from jax.tree_util import tree_transpose
@@ -150,6 +149,7 @@ from .utils.typing import ApplyFn
 from .utils.typing import Axes
 from .utils.typing import EmpiricalGetKernelFn
 from .utils.typing import EmpiricalKernelFn
+from .utils.typing import Get
 from .utils.typing import PyTree
 from .utils.typing import VMapAxes
 from .utils.typing import VMapAxisTriple
@@ -243,7 +243,7 @@ def taylor_expand(f: ApplyFn, params: PyTree, degree: int) -> ApplyFn:
 def empirical_nngp_fn(
     f: ApplyFn,
     trace_axes: Axes = (-1,),
-    diagonal_axes: Axes = ()
+    diagonal_axes: Axes = (),
 ) -> EmpiricalKernelFn:
   """Returns a function to draw a single sample the NNGP of a given network `f`.
 
@@ -260,7 +260,7 @@ def empirical_nngp_fn(
     `diagonal_axes=()` to obtain the kernel exactly of shape
     `zip(f(x1).shape, f(x2).shape)`.
 
-  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principal
+  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principle
   the empirical kernels will have terms measuring the covariance between the
   outputs. Here, we ignore these cross-terms and consider each output
   separately. Please raise an issue if this feature is important to you.
@@ -306,7 +306,7 @@ def empirical_nngp_fn(
   """
   def nngp_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
+      x2: PyTree | None,
       params: PyTree,
       **apply_fn_kwargs
   ) -> PyTree:
@@ -352,7 +352,7 @@ def empirical_nngp_fn(
       dot = _dot_general(out1, out2, trace_axes, diagonal_axes)
       return dot / utils.size_at(out1, trace_axes)
 
-    return tree_map(contract, out1, out2)
+    return jax.tree.map(contract, out1, out2)
 
   return nngp_fn
 
@@ -371,7 +371,7 @@ class NtkImplementation(enum.IntEnum):
       (or `0`) evaluates FLOPs of all other methods at compilation time,
       and selects the fastest method. However, at the time it only works
       correctly on TPUs, and on CPU/GPU can return wrong results, which is why
-      it is not the default. TODO(romann): revisit based on http://b/202218145.
+      it is not the default. TODO: revisit based on http://b/202218145.
 
     JACOBIAN_CONTRACTION:
       (or `1`) computes the NTK as the outer product of two Jacobians, each
@@ -462,7 +462,7 @@ setting it to `False` can lead to dramatic deterioration of performance.
 """
 
 
-_DEFAULT_NTK_FWD: Optional[bool] = None
+_DEFAULT_NTK_FWD: bool | None = None
 """Says whether to use forward mode in `STRUCTURED_DERIVATIVES` (`3`) Jacobians.
 
 Useful for debugging and testing, but for best performance should be set to
@@ -476,15 +476,15 @@ def _empirical_auto_ntk_fn(**kwargs) -> EmpiricalGetKernelFn:
 
   Returns wrong FLOPS on CPU and GPU when JITting.
 
-  TODO(romann): revisit based on http://b/202218145.
+  TODO: revisit based on http://b/202218145.
   """
   cache = {}
 
   def ntk_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
+      x2: PyTree | None,
       params: PyTree,
-      **apply_fn_kwargs
+      **apply_fn_kwargs,
   ) -> jnp.ndarray:
     """Computes a single sample of the automatic empirical NTK.
 
@@ -515,7 +515,7 @@ def _empirical_auto_ntk_fn(**kwargs) -> EmpiricalGetKernelFn:
       2) `diagonal_axes` are present only once.
       All other axes are present twice.
     """
-    shapes = tree_map(jnp.shape, (x1, x2, params, apply_fn_kwargs))
+    shapes = jax.tree.map(jnp.shape, (x1, x2, params, apply_fn_kwargs))
     shapes = _to_tuple_tree(shapes)
 
     if shapes not in cache:
@@ -544,7 +544,7 @@ def _jacobian_contraction_ntk_fn(
     trace_axes: Axes,
     diagonal_axes: Axes,
     vmap_axes: VMapAxes,
-    **kwargs
+    **kwargs,
 ) -> EmpiricalKernelFn:
   """Compute NTK by directly instantiating Jacobians and contracting."""
 
@@ -560,13 +560,13 @@ def _jacobian_contraction_ntk_fn(
       contract_axes = _trace_axes + param_axes
       return _dot_general(x, y, contract_axes, _diagonal_axes) / size
 
-    return tree_reduce(operator.add, tree_map(contract, j1, j2))
+    return tree_reduce(operator.add, jax.tree.map(contract, j1, j2))
 
   def ntk_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
+      x2: PyTree | None,
       params: PyTree,
-      **apply_fn_kwargs
+      **apply_fn_kwargs,
   ) -> jnp.ndarray:
     """Computes a single sample of the empirical NTK (jacobian outer product).
 
@@ -612,7 +612,7 @@ def _jacobian_contraction_ntk_fn(
 
     j1 = j_fn(x1, *args1)
     j2 = j_fn(x2, *args2) if not utils.all_none(x2) else j1
-    ntk = tree_map(sum_and_contract, fx1, j1, j2)
+    ntk = jax.tree.map(sum_and_contract, fx1, j1, j2)
     return ntk
 
   return ntk_fn
@@ -623,13 +623,13 @@ def _ntk_vector_products_ntk_fn(
     trace_axes: Axes,
     diagonal_axes: Axes,
     vmap_axes: VMapAxes,
-    **kwargs
+    **kwargs,
 ) -> EmpiricalKernelFn:
   """Compute NTK via NTK-vector products."""
 
   def ntk_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
+      x2: PyTree | None,
       params: PyTree,
       **apply_fn_kwargs
   ) -> jnp.ndarray:
@@ -676,7 +676,7 @@ def _ntk_vector_products_ntk_fn(
       fx1, fx2 = eval_shape(f1, params), eval_shape(f2, params)
       eye = _std_basis(fx1)
       ntk = vmap(linear_transpose(delta_vjp_jvp, fx2))(eye)
-      ntk = tree_map(lambda fx12: _unravel_array_into_pytree(fx1, 0, fx12), ntk)
+      ntk = jax.tree.map(lambda fx12: _unravel_array_into_pytree(fx1, 0, fx12), ntk)
       ntk = _diagonal(ntk, fx1)
       return ntk
 
@@ -694,8 +694,10 @@ def _ntk_vector_products_ntk_fn(
                      _add(fx_axis, _ndim(fx1)))
 
     ntk = get_ntk(x1, x2, *args1, *args2)
-    ntk = tree_map(lambda x: _trace_and_diagonal(x, trace_axes, diagonal_axes),
-                   ntk)
+    ntk = jax.tree.map(
+        lambda x: _trace_and_diagonal(x, trace_axes, diagonal_axes),
+        ntk,
+    )
     return ntk
 
   return ntk_fn
@@ -708,7 +710,7 @@ def _structured_derivatives_ntk_fn(
     vmap_axes: VMapAxes,
     _j_rules: bool,
     _s_rules: bool,
-    _fwd: Optional[bool]
+    _fwd: bool | None,
 ) -> EmpiricalKernelFn:
   """Compute NTK by using structured derivatives."""
 
@@ -716,8 +718,8 @@ def _structured_derivatives_ntk_fn(
       fx1: jnp.ndarray,
       fx2: jnp.ndarray,
       fx_axis,
-      df_dys_1: list[Union[jnp.ndarray, Zero]],
-      df_dys_2: list[Union[jnp.ndarray, Zero]],
+      df_dys_1: list[jnp.ndarray | Zero],
+      df_dys_2: list[jnp.ndarray | Zero],
       dy_dws_1: list[tuple[jnp.ndarray, rules.Structure]],
       dy_dws_2: list[tuple[jnp.ndarray, rules.Structure]],
       dtype: jnp.dtype
@@ -782,7 +784,7 @@ def _structured_derivatives_ntk_fn(
 
           for i, (id_1, id_2) in enumerate(zip(s1.out_diagonal,
                                                s2.out_diagonal)):
-            # TODO(romann): compute based on array dimensions.
+            # TODO: compute based on array dimensions.
             axis_shift = -100_000  # Huge axis shift to ensure unique axis ids.
 
             axis_id = (-axis_shift -df_dy_1.ndim - df_dy_2.ndim - dy_dw_1.ndim
@@ -826,7 +828,7 @@ def _structured_derivatives_ntk_fn(
 
     ntk = tree_reduce(
         operator.add,
-        tree_map(
+        jax.tree.map(
             contract,
             df_dys_1, df_dys_2, dy_dws_1, dy_dws_2,
             is_leaf=
@@ -841,9 +843,9 @@ def _structured_derivatives_ntk_fn(
 
   def ntk_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
+      x2: PyTree | None,
       params: PyTree,
-      **apply_fn_kwargs
+      **apply_fn_kwargs,
   ) -> jnp.ndarray:
     """Computes a single sample of the structured derivatives NTK.
 
@@ -894,7 +896,7 @@ def _structured_derivatives_ntk_fn(
         df_dys_1, dy_dws_1)
 
     fx_axis, dtype = _get_fx_axis_and_dtype(fx1, fx_axis, params)
-    ntk = tree_map(
+    ntk = jax.tree.map(
         functools.partial(
             sum_and_contract,
             dy_dws_1=dy_dws_1,
@@ -925,10 +927,10 @@ def empirical_ntk_fn(
     trace_axes: Axes = (-1,),
     diagonal_axes: Axes = (),
     vmap_axes: VMapAxes = None,
-    implementation: Union[NtkImplementation, int] = DEFAULT_NTK_IMPLEMENTATION,
+    implementation: NtkImplementation | int = DEFAULT_NTK_IMPLEMENTATION,
     _j_rules: bool = _DEFAULT_NTK_J_RULES,
     _s_rules: bool = _DEFAULT_NTK_S_RULES,
-    _fwd: Optional[bool] = _DEFAULT_NTK_FWD,
+    _fwd: bool | None = _DEFAULT_NTK_FWD,
 ) -> EmpiricalKernelFn:
   r"""Returns a function to draw a single sample the NTK of a given network `f`.
 
@@ -952,7 +954,7 @@ def empirical_ntk_fn(
     `diagonal_axes=()` to obtain the kernel exactly of shape
     `zip(f(x1).shape, f(x2).shape)`.
 
-  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principal
+  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principle
   the empirical kernels will have terms measuring the covariance between the
   outputs. Here, we ignore these cross-terms and consider each output
   separately. Please raise an issue if this feature is important to you.
@@ -1076,10 +1078,10 @@ def empirical_kernel_fn(
     trace_axes: Axes = (-1,),
     diagonal_axes: Axes = (),
     vmap_axes: VMapAxes = None,
-    implementation: Union[NtkImplementation, int] = DEFAULT_NTK_IMPLEMENTATION,
+    implementation: NtkImplementation | int = DEFAULT_NTK_IMPLEMENTATION,
     _j_rules: bool = _DEFAULT_NTK_J_RULES,
     _s_rules: bool = _DEFAULT_NTK_S_RULES,
-    _fwd: Optional[bool] = _DEFAULT_NTK_FWD,
+    _fwd: bool | None = _DEFAULT_NTK_FWD,
 ) -> EmpiricalGetKernelFn:
   r"""Returns a function that computes single draws from NNGP and NT kernels.
 
@@ -1093,7 +1095,7 @@ def empirical_kernel_fn(
     `diagonal_axes=()` to obtain the kernel exactly of shape
     `zip(f(x1).shape, f(x2).shape)`.
 
-  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principal
+  For networks with multiple (i.e. lists, tuples, PyTrees) outputs, in principle
   the empirical kernels will have terms measuring the covariance between the
   outputs. Here, we ignore these cross-terms and consider each output
   separately. Please raise an issue if this feature is important to you.
@@ -1224,10 +1226,10 @@ def empirical_kernel_fn(
   @utils.get_namedtuple('EmpiricalKernel')
   def kernel_fn(
       x1: PyTree,
-      x2: Optional[PyTree],
-      get: Union[None, str, tuple[str, ...]],
+      x2: PyTree | None,
+      get: Get,
       params: PyTree,
-      **apply_fn_kwargs
+      **apply_fn_kwargs,
   ) -> PyTree:
     """Computes a single sample of the empirical kernel of type `get`.
 
@@ -1284,9 +1286,9 @@ def empirical_kernel_fn(
 def empirical_ntk_vp_fn(
     f: ApplyFn,
     x1: PyTree,
-    x2: Optional[PyTree],
+    x2: PyTree | None,
     params: PyTree,
-    **apply_fn_kwargs
+    **apply_fn_kwargs,
 ) -> Callable[[PyTree], PyTree]:
   """Returns an NTK-vector product function.
 
@@ -1388,7 +1390,7 @@ def empirical_ntk_vp_fn(
 def _trace_and_diagonal(
     ntk: jnp.ndarray,
     trace_axes: Axes,
-    diagonal_axes: Axes
+    diagonal_axes: Axes,
 ) -> jnp.ndarray:
   """Extract traces and diagonals along respective pairs of axes from the `ntk`.
 
@@ -1441,12 +1443,12 @@ def _trace_and_diagonal(
 
 def _dict_of_tree_to_tree_of_dict(
     out_dict: dict[str, PyTree],
-    get: tuple[str, ...]
+    get: tuple[str, ...],
 ) -> PyTree:
   # If the elements of an output dict are tuples then change the representation
   # to be a tuple of dicts instead. This occurs when the output of a network is
   # a parallel layer.
-  return tree_map(lambda *x: dict((g, v) for g, v in zip(get, x)),
+  return jax.tree.map(lambda *x: dict((g, v) for g, v in zip(get, x)),
                   *[out_dict[g] for g in get])
 
 
@@ -1456,7 +1458,7 @@ def _get_f_params(
     x_axis: PyTree,
     fx_axis: PyTree,
     kw_axes: dict[str, PyTree],
-    **apply_fn_kwargs
+    **apply_fn_kwargs,
 ) -> Callable[[PyTree], PyTree]:
   x = _expand_dims(x, x_axis)
 
@@ -1478,7 +1480,7 @@ def _get_args(
     params: PyTree,
     vmap_axes: VMapAxes,
     x1: PyTree,
-    x2: PyTree
+    x2: PyTree,
 ):
   kwargs1, kwargs2 = utils.split_kwargs(apply_fn_kwargs, x1, x2)
 
@@ -1501,7 +1503,7 @@ def _get_f1_f2(
     kw_axes: dict[str, PyTree],
     args: tuple,
     x1: PyTree,
-    x2: Optional[PyTree]
+    x2: PyTree | None,
 ) -> tuple[Callable[[PyTree], PyTree], Callable[[PyTree], PyTree]]:
   args1, args2 = args[:len(args) // 2], args[len(args) // 2:]
   _kwargs1 = {k: v for k, v in zip(keys, args1)}
@@ -1517,7 +1519,7 @@ _ArrayOrShape = TypeVar('_ArrayOrShape', jnp.ndarray, ShapedArray)
 
 def _check_einsum_no_broadcast(
     arrays: list[jnp.ndarray],
-    dims: list[list[int]]
+    dims: list[list[int]],
 ):
   """Check that all matching einsum contracting axis sizes are equal.
 
@@ -1555,35 +1557,35 @@ def _expand_dims_array(x: _ArrayOrShape, axis: int) -> _ArrayOrShape:
 
 
 def _expand_dims(
-    x: Union[None, PyTree, UndefinedPrimal],
-    axis: Optional[PyTree]
-) -> Optional[PyTree]:
+    x: None | PyTree | UndefinedPrimal,
+    axis: PyTree | None,
+) -> PyTree | None:
   if axis is None or x is None or isinstance(x, UndefinedPrimal):
     return x
-  return tree_map(_expand_dims_array, x, axis)
+  return jax.tree.map(_expand_dims_array, x, axis)
 
 
-def _add(x: Optional[PyTree], y: Optional[PyTree]) -> Optional[PyTree]:
+def _add(x: PyTree | None, y: PyTree | None) -> PyTree | None:
   if x is None or y is None:
     return None
-  return tree_map(operator.add, x, y)
+  return jax.tree.map(operator.add, x, y)
 
 
 def _sub(x: PyTree, y: PyTree) -> PyTree:
-  return tree_map(operator.sub, x, y)
+  return jax.tree.map(operator.sub, x, y)
 
 
 def _div(x: PyTree, y: int) -> PyTree:
-  return tree_map(lambda x: x / y, x)
+  return jax.tree.map(lambda x: x / y, x)
 
 
-def _squeeze(x: PyTree, axis: Optional[PyTree]) -> PyTree:
+def _squeeze(x: PyTree, axis: PyTree | None) -> PyTree:
   if axis is None:
     return x
 
   def squeeze(
       x: jnp.ndarray,
-      axis: Union[None, int, tuple[int, ...]]
+      axis: None | int | tuple[int, ...],
   ) -> jnp.ndarray:
     """`np.squeeze` analog working with 0-sized axes."""
     if isinstance(axis, int):
@@ -1606,20 +1608,20 @@ def _squeeze(x: PyTree, axis: Optional[PyTree]) -> PyTree:
 
     return jnp.squeeze(x, non_zero_axes)
 
-  return tree_map(squeeze, x, axis)
+  return jax.tree.map(squeeze, x, axis)
 
 
 def _ndim(x: PyTree) -> PyTree:
-  return tree_map(lambda x: x.ndim, x)
+  return jax.tree.map(lambda x: x.ndim, x)
 
 
 def _mod(
-    x: Optional[PyTree],
-    y: PyTree
+    x: PyTree | None,
+    y: PyTree,
 ) -> PyTree:
   if x is None:
     return None
-  return tree_map(operator.mod, x, y)
+  return jax.tree.map(operator.mod, x, y)
 
 
 def _diagonal(ntk: PyTree, fx: PyTree) -> PyTree:
@@ -1631,10 +1633,10 @@ def _diagonal(ntk: PyTree, fx: PyTree) -> PyTree:
 
 
 def _canonicalize_axes(
-    vmap_axes: Optional[VMapAxes],
+    vmap_axes: VMapAxes,
     x: PyTree,
     fx: PyTree,
-    **kwargs
+    **kwargs,
 ) -> VMapAxisTriple:
   if isinstance(vmap_axes, tuple) and len(vmap_axes) == 3:
     x_axis, fx_axis, kw_axes = vmap_axes
@@ -1642,13 +1644,13 @@ def _canonicalize_axes(
     x_axis, fx_axis, kw_axes = vmap_axes, vmap_axes, {}
 
   if isinstance(x_axis, int):
-    x_axis = tree_map(lambda _: x_axis, x)
+    x_axis = jax.tree.map(lambda _: x_axis, x)
 
   if isinstance(fx_axis, int):
-    fx_axis = tree_map(lambda _: fx_axis, fx)
+    fx_axis = jax.tree.map(lambda _: fx_axis, fx)
 
   if isinstance(kw_axes, int):
-    kw_axes = tree_map(lambda _: kw_axes, kwargs)
+    kw_axes = jax.tree.map(lambda _: kw_axes, kwargs)
 
   x_axis = _mod(x_axis, _ndim(x))
   fx_axis = _mod(fx_axis, _ndim(fx))
@@ -1690,7 +1692,7 @@ def _get_dims(
     df_dy_2: jnp.ndarray,
     ndim: int,
     trace_axes: Axes,
-    diagonal_axes: Axes
+    diagonal_axes: Axes,
 ) -> tuple[list[int], list[int], list[int]]:
   df_dy_dims_1 = list(range(df_dy_1.ndim))
   df_dy_dims_2 = list(range(df_dy_1.ndim, df_dy_1.ndim + df_dy_2.ndim))
@@ -1720,15 +1722,15 @@ def _is_abstract_array(x) -> bool:
 
 def _vmap(f: Callable, in_axes, out_axes, squeeze_out: bool = True) -> Callable:
   """An expand-then-squeeze `vmap` for `f` expecting/returning batch dims."""
-  in_axes_plus_1 = tree_map(lambda x: x if x in (None, -1) else x + 1, in_axes)
+  in_axes_plus_1 = jax.tree.map(lambda x: x if x in (None, -1) else x + 1, in_axes)
 
   @utils.wraps(f)
   def f_vmapped(*args):
-    args = tree_map(
+    args = jax.tree.map(
         _expand_dims, args, in_axes_plus_1, is_leaf=_is_abstract_array)
     out = vmap(f, in_axes, out_axes)(*args)
     if squeeze_out:
-      out_axes_plus_1 = tree_map(
+      out_axes_plus_1 = jax.tree.map(
           lambda x: x if x in (None, -1) else x + 1, out_axes)
       out = _squeeze(out, out_axes_plus_1)
     return out
@@ -1738,9 +1740,9 @@ def _vmap(f: Callable, in_axes, out_axes, squeeze_out: bool = True) -> Callable:
 
 def _get_fx_axis_and_dtype(fx, fx_axis, params: PyTree):
   if fx_axis is None:
-    fx_axis = tree_map(lambda x: None, fx)
+    fx_axis = jax.tree.map(lambda x: None, fx)
   # Set the default type to be the least common type ancestor.
-  dtypes, _ = tree_flatten(tree_map(jnp.dtype, params))
+  dtypes, _ = tree_flatten(jax.tree.map(jnp.dtype, params))
   if not dtypes:
     dtype = None
   else:
@@ -1749,16 +1751,16 @@ def _get_fx_axis_and_dtype(fx, fx_axis, params: PyTree):
 
 
 def _unravel_dfs(dfs: PyTree, params: PyTree, y: PyTree) -> PyTree:
-  dfs = tree_map(functools.partial(_unravel_array_into_pytree, y, 0), dfs)
+  dfs = jax.tree.map(functools.partial(_unravel_array_into_pytree, y, 0), dfs)
 
   if tree_structure(dfs).num_leaves > 0:
-    dfs = tree_transpose(tree_structure(tree_map(lambda x, y: [x] * len(y),
+    dfs = tree_transpose(tree_structure(jax.tree.map(lambda x, y: [x] * len(y),
                                                  params,
                                                  dfs)),
                          tree_structure(y), dfs)
 
   if tree_structure(dfs).num_leaves == 0:
-    dfs = tree_map(lambda x: dfs, y)
+    dfs = jax.tree.map(lambda x: dfs, y)
   return dfs
 
 
@@ -1773,7 +1775,7 @@ def _get_df_dys_and_dy_dws(
     params: PyTree,
     _j_rules: bool,
     _s_rules: bool,
-    _fwd: Optional[bool]
+    _fwd: bool | None,
 ) -> tuple[PyTree, PyTree]:
   """Computes primitive output cotangents (`df/dy`) and Jacobians (`dy/dw`)."""
   def primals_out_and_pullback(mode: _MODE) -> PyTree:
@@ -1796,8 +1798,8 @@ def _get_primals_out_and_pullback(
     mode: _MODE,
     _j_rules: bool,
     _s_rules: bool,
-    _fwd: Optional[bool],
-    *primals_in: PyTree
+    _fwd: bool | None,
+    *primals_in: PyTree,
 ) -> tuple[PyTree, Callable]:
   """Adapted from `jax.interpreters.ad`.
 
@@ -1809,7 +1811,7 @@ def _get_primals_out_and_pullback(
   fn_flat, out_tree = jax.api_util.flatten_fun_nokwargs(
       lu.wrap_init(fn), in_tree)
 
-  # TODO(romann): handle call primitives more gracefully.
+  # TODO: handle call primitives more gracefully.
   with jax.disable_jit():
     outs = ad.linearize(fn_flat, *primals_in_flat, has_aux=False)
 
@@ -1836,9 +1838,11 @@ def _backward_pass(
     cotangents_in: tuple[jnp.ndarray, ...],
     _j_rules: bool,
     _s_rules: bool,
-    _fwd: Optional[bool]
-) -> Union[list[list[Union[jnp.ndarray, Zero]]],
-           list[list[tuple[jnp.ndarray, rules.Structure]]]]:
+    _fwd: bool | None,
+) -> list[
+    list[jnp.ndarray | Zero] |
+    list[list[tuple[jnp.ndarray, rules.Structure]]]
+]:
   """Similar to and adapted from `jax.interpreters.ad.backward_pass`.
 
   Traverses the computational graph in the same order as the above, but collects
@@ -1856,7 +1860,7 @@ def _backward_pass(
   the NTK.
   """
 
-  def read_cotangent(v: Var) -> Union[jnp.ndarray, Zero]:
+  def read_cotangent(v: Var) -> jnp.ndarray | Zero:
     return ct_env.pop(v, Zero(v.aval))
 
   primal_env: dict[Var, jnp.ndarray] = {}
@@ -2027,9 +2031,9 @@ def _backprop_step(
     eqn: JaxprEqn,
     primal_env: dict[Var, jnp.ndarray],
     ct_env: dict[Var, jnp.ndarray],
-    read_cotangent: Callable[[Var], Union[jnp.ndarray, Zero]],
-    do_write_cotangents: bool = True
-) -> tuple[Union[jnp.ndarray, Zero], list[Union[jnp.ndarray, UndefinedPrimal]]]:
+    read_cotangent: Callable[[Var], jnp.ndarray | Zero],
+    do_write_cotangents: bool = True,
+) -> tuple[jnp.ndarray | Zero, list[jnp.ndarray | UndefinedPrimal]]:
   """Adapted from `jax.interpreters.ad`."""
   invals = map(functools.partial(_read_primal, primal_env), eqn.invars)
   cts_in = map(read_cotangent, eqn.outvars)
@@ -2053,7 +2057,7 @@ def _backprop_step(
 
 def _trim_cotangents(
     cts_in: ShapedArray,
-    structure: rules.Structure
+    structure: rules.Structure,
 ) -> ShapedArray:
   cts_in = _trim_axis(
       cts_in,
@@ -2063,9 +2067,9 @@ def _trim_cotangents(
 
 
 def _trim_invals(
-    invals: list[Union[jnp.ndarray, UndefinedPrimal]],
+    invals: list[jnp.ndarray | UndefinedPrimal],
     structure: rules.Structure,
-) -> list[Union[jnp.ndarray, UndefinedPrimal]]:
+) -> list[jnp.ndarray | UndefinedPrimal]:
   trimmed_invals = list(invals)
 
   for i in structure.in_trace_idxs:
@@ -2086,14 +2090,14 @@ def _trim_invals(
       if isinstance(trimmed_invals[i], UndefinedPrimal):
         trimmed_invals[i] = _trim_axis(trimmed_invals[i], in_d)
 
-  return trimmed_invals  # pytype: disable=bad-return-type  # jax-ndarray
+  return trimmed_invals
 
 
 def _trim_eqn(
     eqn: JaxprEqn,
     idx: int,
-    trimmed_invals: list[Union[jnp.ndarray, UndefinedPrimal]],
-    trimmed_cts_in: ShapedArray
+    trimmed_invals: list[jnp.ndarray | UndefinedPrimal],
+    trimmed_cts_in: ShapedArray,
 ) -> JaxprEqn:
   if eqn.primitive in rules.EQN_PARAMS_RULES:
     # Copy the equation parameters to modify.
@@ -2103,7 +2107,7 @@ def _trim_eqn(
         params=dict(eqn.params),
         idx=idx,
         trimmed_invals=trimmed_invals_e,
-        trimmed_cts_in=trimmed_cts_in
+        trimmed_cts_in=trimmed_cts_in,
     )
     eqn = eqn.replace(params=params)
 
@@ -2111,9 +2115,9 @@ def _trim_eqn(
 
 
 def _trim_axis(
-    x: Union[UndefinedPrimal, ShapedArray, jnp.ndarray],
-    axis: Union[int, tuple[int, ...]],
-) -> Union[UndefinedPrimal, ShapedArray]:
+    x: UndefinedPrimal | ShapedArray | jnp.ndarray,
+    axis: int | tuple[int, ...],
+) -> UndefinedPrimal | ShapedArray:
   """Trim `axis` of `x` to be of length `1`. `x` is only used for shape."""
   if isinstance(axis, int):
     axis = (axis,)
@@ -2129,10 +2133,10 @@ def _trim_axis(
 
 
 def _eqn_jvp_fn(
-    eqn: Optional[JaxprEqn],
+    eqn: JaxprEqn | None,
     idx: int,
     tangents: jnp.ndarray,
-    *invals
+    *invals,
 ) -> jnp.ndarray:
   """Perform a JVP for `eqn`."""
   if eqn is None:
@@ -2166,9 +2170,9 @@ def _eqn_jvp_fn(
 
 
 def _eqn_vjp_fn(
-    eqn: Optional[JaxprEqn],
+    eqn: JaxprEqn | None,
     cts_in: jnp.ndarray,
-    *invals
+    *invals,
 ) -> tuple[jnp.ndarray, ...]:
   """Perform a VJP for `eqn`. Adapted from `jax.interpreters.ad`."""
   if eqn is None:
@@ -2195,13 +2199,13 @@ def _eqn_vjp_fn(
 
 
 def _get_jacobian(
-    eqn: Optional[JaxprEqn],
+    eqn: JaxprEqn | None,
     cts_in: ShapedArray,
-    invals: list[Union[jnp.ndarray, UndefinedPrimal]],
+    invals: list[jnp.ndarray | UndefinedPrimal],
     idx: int,
     _j_rules: bool,
-    _fwd: Optional[bool],
-) -> Union[jnp.ndarray, Zero]:
+    _fwd: bool | None,
+) -> jnp.ndarray | Zero:
   """Get the (structured) `eqn` output Jacobian wrt `eqn.invars[idx]`."""
   if eqn is None:
     primitive = None
@@ -2222,7 +2226,7 @@ def _get_jacobian(
 
   else:
     # Vanilla Jacobian evaluation.
-    if _get_fwd(_fwd, cts_in_shape, inval_shape):  # pytype: disable=wrong-arg-types  # always-use-return-annotations
+    if _get_fwd(_fwd, cts_in_shape, inval_shape):
       # Forward mode.
       out_axes = -1
       inputs = invals[idx].aval
@@ -2244,7 +2248,7 @@ def _get_jacobian(
     else:
       dy_dw = dy_dw.reshape(dy_dw_shape)
 
-  dy_dw_shape_ = dy_dw.aval.shape if isinstance(dy_dw, Zero) else dy_dw.shape  # pytype:disable=attribute-error
+  dy_dw_shape_ = dy_dw.aval.shape if isinstance(dy_dw, Zero) else dy_dw.shape
   assert dy_dw_shape_ == dy_dw_shape, (dy_dw_shape_, dy_dw_shape)
   return dy_dw
 
@@ -2253,7 +2257,7 @@ def _write_cotangent(
     prim: core.Primitive,
     ct_env: dict[Var, jnp.ndarray],
     v: Var,
-    ct: Union[jnp.ndarray, Zero]
+    ct: jnp.ndarray | Zero,
 ):
   """Adapted from `jax.interpreters.ad`."""
   assert ct is not Zero, (prim, v.aval)
@@ -2274,8 +2278,8 @@ def _write_cotangent(
 
 def _read_primal(
     env: dict[Var, jnp.ndarray],
-    v: Union[Var, Literal],
-) -> Union[jnp.ndarray, UndefinedPrimal]:
+    v: Var | Literal,
+) -> jnp.ndarray | UndefinedPrimal:
   if type(v) is Literal:
     return v.val
 
@@ -2289,16 +2293,16 @@ def _read_primal(
 def _write_primal(
     env: dict[Var, jnp.ndarray],
     v: Var,
-    val: Union[jnp.ndarray, UndefinedPrimal]
+    val: jnp.ndarray | UndefinedPrimal,
 ):
   if not ad.is_undefined_primal(val):
-    env[v] = val  # pytype: disable=container-type-mismatch  # jax-ndarray
+    env[v] = val
 
 
 def _get_fwd(
-    _fwd: Optional[bool],
+    _fwd: bool | None,
     cts_in_shape: tuple[int, ...],
-    inval_shape: tuple[int, ...]
+    inval_shape: tuple[int, ...],
 ) -> bool:
   if _fwd is None:
     out_size = np.prod(cts_in_shape)
@@ -2328,7 +2332,7 @@ def _std_basis(pytree: PyTree) -> PyTree:
 def _unravel_array_into_pytree(
     pytree: PyTree,
     axis: int,
-    arr: jnp.ndarray
+    arr: jnp.ndarray,
 ) -> PyTree:
   """Similar to `jax.api._unravel_array_into_pytree` without host-side ops."""
   leaves, treedef = tree_flatten(pytree)
@@ -2343,7 +2347,7 @@ def _unravel_array_into_pytree(
 
 def _get_res_batch_dims(
     contracting_dims: Iterable[int],
-    batch_dims: Iterable[int]
+    batch_dims: Iterable[int],
 ) -> list[int]:
   res_batch_dims = [2 * b - i for i, b in enumerate(batch_dims)]
   for i, b in enumerate(batch_dims):
@@ -2358,7 +2362,7 @@ def _dot_general(
     rhs: jnp.ndarray,
     contracting_dims: Axes,
     batch_dims: Axes,
-    precision=None
+    precision=None,
 ) -> jnp.ndarray:
   """`jax.lax.dot_general` with preserved dims order and shared lhs / rhs dims.
 

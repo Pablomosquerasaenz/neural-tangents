@@ -19,7 +19,7 @@ several branches into one.
 """
 
 import functools
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Callable, Iterable, Sequence
 import warnings
 
 from jax import numpy as jnp
@@ -109,7 +109,7 @@ def FanInSum() -> InternalLayerMasked:
         channel_axis=ks[0].channel_axis,
         mask1=None,
         mask2=None,
-    )  # pytype:disable=wrong-keyword-args
+    )
 
   def mask_fn(mask, input_shape):
     return _sum_masks(mask)
@@ -178,7 +178,7 @@ def FanInProd() -> InternalLayerMasked:
         channel_axis=ks[0].channel_axis,
         mask1=None,
         mask2=None,
-    )  # pytype:disable=wrong-keyword-args
+    )
 
   def mask_fn(mask, input_shape):
     return _sum_masks(mask)
@@ -235,8 +235,8 @@ def FanInConcat(axis: int = -1) -> InternalLayerMasked:
             'for the case if all input layers guaranteed to be mean-zero '
             'Gaussian, i.e. having all `is_gaussian` set to `True`.')
     else:
-      # TODO(romann): allow nonlinearity after channelwise concatenation.
-      # TODO(romann): support concatenating different channelwise masks.
+      # TODO: allow nonlinearity after channelwise concatenation.
+      # TODO: support concatenating different channelwise masks.
       is_gaussian = False
 
     if _axis == batch_axis:
@@ -274,22 +274,24 @@ def FanInConcat(axis: int = -1) -> InternalLayerMasked:
     ntk = _concat_kernels([k.ntk for k in ks], _axis,
                           False, diagonal_spatial, widths)
 
-    return Kernel(cov1=cov1,
-                  cov2=cov2,
-                  nngp=nngp,
-                  ntk=ntk,
-                  x1_is_x2=ks[0].x1_is_x2,
-                  is_gaussian=is_gaussian,
-                  is_reversed=is_reversed,
-                  is_input=ks[0].is_input,
-                  diagonal_batch=diagonal_batch,
-                  diagonal_spatial=diagonal_spatial,
-                  shape1=None,
-                  shape2=None,
-                  batch_axis=batch_axis,
-                  channel_axis=channel_axis,
-                  mask1=None,
-                  mask2=None)  # pytype:disable=wrong-keyword-args
+    return Kernel(
+        cov1=cov1,
+        cov2=cov2,
+        nngp=nngp,
+        ntk=ntk,
+        x1_is_x2=ks[0].x1_is_x2,
+        is_gaussian=is_gaussian,
+        is_reversed=is_reversed,
+        is_input=ks[0].is_input,
+        diagonal_batch=diagonal_batch,
+        diagonal_spatial=diagonal_spatial,
+        shape1=None,
+        shape2=None,
+        batch_axis=batch_axis,
+        channel_axis=channel_axis,
+        mask1=None,
+        mask2=None,
+    )
 
   def mask_fn(mask, input_shape):
     return _concat_masks(mask, input_shape, axis)
@@ -304,7 +306,7 @@ def _map_tuples(fn: Callable, tuples: Iterable[tuple]) -> tuple:
   return tuple(map(fn, zip(*(t for t in tuples))))
 
 
-def _sum_masks(masks: list[Optional[jnp.ndarray]]) -> Optional[jnp.ndarray]:
+def _sum_masks(masks: list[jnp.ndarray]) -> jnp.ndarray | None:
   def add_two_masks(mask1, mask2):
     if mask1 is None:
       return mask2
@@ -319,10 +321,10 @@ def _sum_masks(masks: list[Optional[jnp.ndarray]]) -> Optional[jnp.ndarray]:
 
 
 def _concat_masks(
-    masks: list[Optional[jnp.ndarray]],
+    masks: list[jnp.ndarray] | None,
     input_shapes: Sequence[Sequence[int]],
-    axis: int
-) -> Optional[jnp.ndarray]:
+    axis: int,
+) -> jnp.ndarray | None:
   """Returns a mask which is a concatenation of `masks`.
 
   Since elements of `masks` can have any shapes broadcastable to respective
@@ -366,7 +368,7 @@ def _concat_masks(
           m,
           max_shape[:axis] + m.shape[axis: axis + 1] + max_shape[axis + 1:])
        if m is not None
-       else jnp.zeros_like(max_shapes[i], dtype=jnp.bool_))  # pytype: disable=wrong-arg-types  # jnp-type
+       else jnp.zeros_like(max_shapes[i], dtype=jnp.bool_))
       for i, m in enumerate(masks)
   ]
 
@@ -412,12 +414,12 @@ def _preprocess_kernels_for_fan_in(ks: Kernels) -> tuple[list[Kernel], bool]:
 
 
 def _concat_kernels(
-    mats: Sequence[Optional[jnp.ndarray]],
+    mats: Sequence[jnp.ndarray] | None,
     axis: int,
     diagonal_batch: bool,
     diagonal_spatial: bool,
-    widths: Sequence[int]
-) -> Optional[jnp.ndarray]:
+    widths: Sequence[int],
+) -> jnp.ndarray | None:
   """Compute the covariance of concatenated activations with given covariances.
 
   Args:

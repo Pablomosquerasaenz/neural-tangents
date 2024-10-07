@@ -28,12 +28,11 @@ kernel function is JITted internally.
 
 from functools import partial
 import operator
-from typing import Generator, Iterable, Optional, Union
+from typing import Generator, Iterable
 
 import jax
 from jax import random
 import jax.numpy as jnp
-from jax.tree_util import tree_map
 
 from .batching import batch
 
@@ -61,20 +60,23 @@ def _sample_once_kernel_fn(
     init_fn: InitFn,
     batch_size: int = 0,
     device_count: int = -1,
-    store_on_device: bool = True
+    store_on_device: bool = True,
 ):
-  @partial(batch,
-           batch_size=batch_size,
-           device_count=device_count,
-           store_on_device=store_on_device)
+  @partial(
+      batch,
+      batch_size=batch_size,
+      device_count=device_count,
+      store_on_device=store_on_device,
+  )
   def kernel_fn_sample_once(
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[jnp.ndarray]],
+      x2: NTTree[jnp.ndarray] | None,
       key: jax.Array,
       get: Get,
-      **apply_fn_kwargs):
+      **apply_fn_kwargs,
+  ):
     init_key, dropout_key = random.split(key, 2)
-    shape = tree_map(lambda x: x.shape, x1)
+    shape = jax.tree.map(lambda x: x.shape, x1)
     _, params = init_fn(init_key, shape)
     return kernel_fn(x1, x2, get, params, rng=dropout_key, **apply_fn_kwargs)
   return kernel_fn_sample_once
@@ -84,15 +86,17 @@ def _sample_many_kernel_fn(
     kernel_fn_sample_once,
     key: jax.Array,
     n_samples: set[int],
-    get_generator: bool):
+    get_generator: bool,
+):
   def normalize(sample: PyTree, n: int) -> PyTree:
-    return tree_map(lambda sample: sample / n, sample)
+    return jax.tree.map(lambda sample: sample / n, sample)
 
   def get_samples(
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[jnp.ndarray]],
+      x2: NTTree[jnp.ndarray] | None,
       get: Get,
-      **apply_fn_kwargs):
+      **apply_fn_kwargs,
+  ):
     _key = key
     ker_sampled = None
     for n in range(1, max(n_samples) + 1):
@@ -101,7 +105,7 @@ def _sample_many_kernel_fn(
       if ker_sampled is None:
         ker_sampled = one_sample
       else:
-        ker_sampled = tree_map(operator.add, ker_sampled, one_sample)
+        ker_sampled = jax.tree.map(operator.add, ker_sampled, one_sample)
       yield n, ker_sampled
 
   if get_generator:
@@ -109,9 +113,9 @@ def _sample_many_kernel_fn(
     def get_sampled_kernel(
         x1: jnp.ndarray,
         x2: jnp.ndarray,
-        get: Optional[Get] = None,
-        **apply_fn_kwargs
-    ) -> Generator[Union[jnp.ndarray, tuple[jnp.ndarray, ...]], None, None]:
+        get: Get = None,
+        **apply_fn_kwargs,
+    ) -> Generator[jnp.ndarray | tuple[jnp.ndarray, ...], None, None]:
       for n, sample in get_samples(x1, x2, get, **apply_fn_kwargs):
         if n in n_samples:
           yield normalize(sample, n)
@@ -120,9 +124,9 @@ def _sample_many_kernel_fn(
     def get_sampled_kernel(
         x1: jnp.ndarray,
         x2: jnp.ndarray,
-        get: Optional[Get] = None,
-        **apply_fn_kwargs
-    ) -> Union[jnp.ndarray, tuple[jnp.ndarray, ...]]:
+        get: Get = None,
+        **apply_fn_kwargs,
+    ) -> jnp.ndarray | tuple[jnp.ndarray, ...]:
       for n, sample in get_samples(x1, x2, get, **apply_fn_kwargs):
         pass
       return normalize(sample, n)
@@ -134,17 +138,17 @@ def monte_carlo_kernel_fn(
     init_fn: InitFn,
     apply_fn: ApplyFn,
     key: jax.Array,
-    n_samples: Union[int, Iterable[int]],
+    n_samples: int | Iterable[int],
     batch_size: int = 0,
     device_count: int = -1,
     store_on_device: bool = True,
     trace_axes: Axes = (-1,),
     diagonal_axes: Axes = (),
-    vmap_axes: Optional[VMapAxes] = None,
-    implementation: Union[int, NtkImplementation] = DEFAULT_NTK_IMPLEMENTATION,
+    vmap_axes: VMapAxes = None,
+    implementation: int | NtkImplementation = DEFAULT_NTK_IMPLEMENTATION,
     _j_rules: bool = _DEFAULT_NTK_J_RULES,
     _s_rules: bool = _DEFAULT_NTK_S_RULES,
-    _fwd: Optional[bool] = _DEFAULT_NTK_FWD,
+    _fwd: bool | None = _DEFAULT_NTK_FWD,
 ) -> MonteCarloKernelFn:
   r"""Return a Monte Carlo sampler of NTK and NNGP kernels of a given function.
 
@@ -156,12 +160,12 @@ def monte_carlo_kernel_fn(
   Args:
     init_fn:
       a function initializing parameters of the neural network. From
-      :obj:`jax.example_libraries.stax`: "takes an rng key and an input shape
+      :obj:`jax.example_libraries.stax`: "takes a rng key and an input shape
       and returns an `(output_shape, params)` pair".
 
     apply_fn:
       a function computing the output of the neural network.
-      From :obj:`jax.example_libraries.stax`: "takes params, inputs, and an
+      From :obj:`jax.example_libraries.stax`: "takes params, inputs, and a
       rng key and applies the layer".
 
     key:
@@ -317,7 +321,7 @@ def monte_carlo_kernel_fn(
       implementation=implementation,
       _s_rules=_s_rules,
       _j_rules=_j_rules,
-      _fwd=_fwd
+      _fwd=_fwd,
   )
 
   kernel_fn = empirical_kernel_fn(**kwargs)
@@ -327,7 +331,7 @@ def monte_carlo_kernel_fn(
       init_fn=init_fn,
       batch_size=batch_size,
       device_count=device_count,
-      store_on_device=store_on_device
+      store_on_device=store_on_device,
   )
 
   n_samples, get_generator = _canonicalize_n_samples(n_samples)
@@ -335,13 +339,14 @@ def monte_carlo_kernel_fn(
       kernel_fn_sample_once=kernel_fn_sample_once,
       key=key,
       n_samples=n_samples,
-      get_generator=get_generator
+      get_generator=get_generator,
   )
   return kernel_fn
 
 
 def _canonicalize_n_samples(
-    n_samples: Union[int, Iterable[int]]) -> tuple[set[int], bool]:
+    n_samples: int | Iterable[int],
+) -> tuple[set[int], bool]:
   get_generator = True
   if isinstance(n_samples, int):
     get_generator = False

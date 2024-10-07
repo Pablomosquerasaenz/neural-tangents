@@ -17,7 +17,7 @@
 from functools import partial
 import logging
 import operator
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Sequence
 
 from absl.testing import absltest
 from flax import linen as nn
@@ -28,7 +28,6 @@ from jax import jit
 from jax import lax
 from jax import random
 from jax import remat
-from jax import tree_map
 import jax.numpy as jnp
 from jax.tree_util import tree_reduce
 import neural_tangents as nt
@@ -155,7 +154,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
       b *= 2.
       w1 += 5.
       w2 /= 0.9
-    return tree_map(
+    return jax.tree.map(
         operator.add,
         f0,
         ({'list': [
@@ -214,7 +213,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
         w1 += 5.
         w2 /= 0.9
       dx = x - x0
-      return tree_map(
+      return jax.tree.map(
           operator.add,
           f_lin,
           ({'list': [
@@ -252,7 +251,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
 
     ntk_ref = ntks[nt.NtkImplementation.JACOBIAN_CONTRACTION]
 
-    tree_map(lambda x, y: self.assertEqual(x.shape, y.shape), nngp, ntk_ref)
+    jax.tree.map(lambda x, y: self.assertEqual(x.shape, y.shape), nngp, ntk_ref)
 
     for i, ntk in ntks.items():
       self.assertAllClose(ntk_ref, ntk, err_msg=f'{i} impl. fails.')
@@ -277,7 +276,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
         train_shape[1:],
         network,
         diagonal_axes=(),
-        trace_axes=()
+        trace_axes=(),
     )
 
     _, ntk_fns_vmapped = kernel_fn(
@@ -286,7 +285,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
         network,
         diagonal_axes=(),
         trace_axes=(),
-        vmap_axes=0
+        vmap_axes=0,
     )
 
     self._compare_kernels(x1, None, ntk_fns, ntk_fns_vmapped, nngp_fn)
@@ -304,7 +303,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
           (0, -1),
           (1, -2),
           (2, 3),
-          (3, 0, 2)
+          (3, 0, 2),
       ],
       trace_axes=[
           (),
@@ -320,8 +319,8 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
           (-3, -2),
           (-3, -1),
           (-2, -4),
-          (2, 0, -1)
-      ]
+          (2, 0, -1),
+      ],
   )
   def testAxes(self, diagonal_axes, trace_axes):
     key = random.PRNGKey(0)
@@ -422,7 +421,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
 
     init_fn, apply_fn, _ = stax.serial(layer(1024), layer(1))
 
-    _, params = init_fn(net_key, tree_map(jnp.shape, x1))
+    _, params = init_fn(net_key, jax.tree.map(jnp.shape, x1))
 
     ntk_fns = {
         i: jit(nt.empirical_ntk_fn(apply_fn, implementation=i))
@@ -520,7 +519,7 @@ class EmpiricalTest(test_utils.NeuralTangentsTestCase):
         )
     )
 
-    _, params = init_fn(random.PRNGKey(3), tree_map(jnp.shape, x1))
+    _, params = init_fn(random.PRNGKey(3), jax.tree.map(jnp.shape, x1))
 
     in_axes = [(0, 1), 2]
     out_axes = [-2, -3]
@@ -791,13 +790,11 @@ _functions: dict[str, Callable[[PyTree, PyTree], PyTree]] = {
     'transpose_5': lambda p, x: jnp.transpose(jnp.expand_dims(jnp.stack(p, 2), 2), (0, 1, 2, 3)),
     'transpose_6': lambda p, x: jnp.transpose(jnp.expand_dims(jnp.stack(p, 2), 0), (1, 0, 3, 2)),
 
-    # pytype: disable=module-attr
     'lax._reduce_window_sum_1': lambda p, x: lax._reduce_window_sum(p[0], (1, 2), (1, 1), [(0, 0), (0, 1)]),
     'lax._reduce_window_sum_2': lambda p, x: lax._reduce_window_sum(p[0], (1, 1), (1, 1), [(0, 0), (0, 0)]),
     'lax._reduce_window_sum_3': lambda p, x: lax._reduce_window_sum(p[0], (2, 1), (1, 2), [(0, 0), (0, 2)]),
     'lax._reduce_window_sum_4': lambda p, x: lax._reduce_window_sum(p[0], (2, 2), (1, 1), [(2, 3), (0, 0)]),
     'lax._reduce_window_sum_5': lambda p, x: lax._reduce_window_sum(p[0], (1, 1), (2, 1), [(0, 0), (1, 0)]),
-    # pytype: enable=module-attr
 
     'dg1-l': lambda p, x: lax.dot_general(p[0], x, (((), ()), ((), ()))),
     'dg2-l': lambda p, x: lax.dot_general(p[0], x, (((1,), (0,)), ((), ()))),
@@ -829,7 +826,7 @@ _functions: dict[str, Callable[[PyTree, PyTree], PyTree]] = {
     'p[1] * p[0][1, 0]': lambda p, x: p[1] * p[0][1, 0],
     'p[1] / p[0][0, -1]': lambda p, x: p[1] / p[0][1, -1],
 
-    # TODO(romann): investigate full support for compiled loops.
+    # TODO: investigate full support for compiled loops.
     'lax.map_1': lambda p, x: lax.map(lambda s: 2 * s, p[0]) * jnp.sum(p[1]),
     'lax.map_2': lambda p, x: lax.map(lambda s: 2 * s + 1, p[0]) * jnp.sum(p[0]),
     'lax.map_3': lambda p, x: jnp.sum(lax.map(lambda s: -s / 2., p[0])) * p[0],
@@ -837,7 +834,7 @@ _functions: dict[str, Callable[[PyTree, PyTree], PyTree]] = {
     'lax.map_5': lambda p, x: (lax.map(lambda s: lax.map(lambda p: 2 * p, s) + 1., p[0]), p[1]),
     'lax.map_6': lambda p, x: [lax.map(lambda s: lax.map(lambda p: 2 * p, s) + 1., p[0]), p[0]],
 
-    # TODO(romann): revisit if JAX figures out AD for out-of-bounds indexing.
+    # TODO: revisit if JAX figures out AD for out-of-bounds indexing.
     # 'p[0][1, 0] * p[2].T': lambda p, x: p[0][1, 0] * p[2].T,
 }
 
@@ -908,7 +905,7 @@ def _compare_ntks(
           k_2,
           rtol=rtol,
           atol=atol,
-          check_dtypes=False,  # TODO(romann): revisit.
+          check_dtypes=False,  # TODO: revisit.
           check_finite=False,
           err_msg=msg)
 
@@ -1003,7 +1000,7 @@ class StructuredDerivativesTest(test_utils.NeuralTangentsTestCase):
           # False
       ],
       do_remat=[
-          # TODO(romann): support remat
+          # TODO: support remat
           # True,
           False
       ],
@@ -1024,11 +1021,11 @@ class StructuredDerivativesTest(test_utils.NeuralTangentsTestCase):
       _fwd
   ):
     if f_name == 'lax_reshape_all':
-      # TODO(romann): investigate slow CPU execution.
+      # TODO: investigate slow CPU execution.
       test_utils.skip_test('Skipping large non-structured reshapes on CPU.')
 
     if 'lax.map' in f_name and shapes[0][0] and shapes[0][0][0] == 0:
-      # TODO(romann): fix.
+      # TODO: fix.
       raise absltest.SkipTest('Zero-length scans not supported without JIT.')
 
     p = [random.normal(random.PRNGKey(i), s, dtype) for i, s in
@@ -1311,7 +1308,7 @@ class _MlpMixer(nn.Module):
   hidden_dim: int
   tokens_mlp_dim: int
   channels_mlp_dim: int
-  model_name: Optional[str] = None
+  model_name: str | None = None
 
   @nn.compact
   def __call__(self, inputs, *, train):
@@ -1369,7 +1366,7 @@ def _get_mixer_b16_config() -> dict[str, Any]:
     ],
     dtype=[
         jax.dtypes.canonicalize_dtype(jnp.float64),
-    ]
+    ],
 )
 class FlaxOtherTest(test_utils.NeuralTangentsTestCase):
 
@@ -1584,7 +1581,7 @@ class FlaxCnnTest(test_utils.NeuralTangentsTestCase):
     vmap_axes=[
         0,
         None
-    ]
+    ],
 )
 class ConvTest(test_utils.NeuralTangentsTestCase):
 

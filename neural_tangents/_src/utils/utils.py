@@ -22,7 +22,7 @@ import functools
 import inspect
 import operator
 import types
-from typing import Any, Callable, Iterable, Optional, Sequence, Sized, TypeVar, Union
+from typing import Any, Callable, Iterable, Sequence, Sized, TypeVar
 import warnings
 
 import jax
@@ -30,14 +30,13 @@ from jax import core
 from jax import random
 import jax.numpy as jnp
 from jax.tree_util import tree_all
-from jax.tree_util import tree_map
 import numpy as np
 
 
 PyTree = Any
 
 
-Axes = Union[int, Sequence[int]]
+Axes = int | Sequence[int]
 
 
 def is_list_or_tuple(x) -> bool:
@@ -46,7 +45,7 @@ def is_list_or_tuple(x) -> bool:
   return type(x) == list or type(x) == tuple
 
 
-def is_nt_tree_of(x, dtype: Union[type, tuple[type, ...]]) -> bool:
+def is_nt_tree_of(x, dtype: type | tuple[type, ...]) -> bool:
   if isinstance(x, dtype):
     return True
   if not is_list_or_tuple(x):
@@ -55,9 +54,9 @@ def is_nt_tree_of(x, dtype: Union[type, tuple[type, ...]]) -> bool:
 
 
 def nt_tree_fn(
-    nargs: Optional[int] = None,
-    tree_structure_argnum: Optional[int] = None,
-    reduce: Callable = lambda x: x
+    nargs: int | None = None,
+    tree_structure_argnum: int | None = None,
+    reduce: Callable = lambda x: x,
 ):
   """Convert a function that acts on single inputs to one that acts on trees.
 
@@ -131,9 +130,9 @@ def nt_tree_fn(
   return tree_fn
 
 
-def all_none(x, attr: Optional[str] = None) -> bool:
+def all_none(x, attr: str | None = None) -> bool:
   get_fn = (lambda x: x) if attr is None else lambda x: getattr(x, attr)
-  return tree_all(tree_map(lambda x: get_fn(x) is None, x))
+  return tree_all(jax.tree.map(lambda x: get_fn(x) is None, x))
 
 
 def canonicalize_get(get):
@@ -141,7 +140,7 @@ def canonicalize_get(get):
     return True, get
 
   if not get:
-    # NOTE(schsam): It seems slightly nicer to not support the empty-tuple
+    # NOTE: It seems slightly nicer to not support the empty-tuple
     # case. Happy to add support later, if there's a use-case.
     raise ValueError('"get" must be non-empty.')
 
@@ -255,9 +254,9 @@ def get_namedtuple(name):
 @nt_tree_fn(nargs=2, reduce=lambda x: jnp.all(jnp.array(x)))
 def x1_is_x2(
     x1: jnp.ndarray,
-    x2: Optional[jnp.ndarray] = None,
-    eps: float = 1e-12
-) -> Union[bool, jnp.ndarray]:
+    x2: jnp.ndarray | None = None,
+    eps: float = 1e-12,
+) -> bool | jnp.ndarray:
   if not isinstance(x1, (np.ndarray, jnp.ndarray)):
     raise TypeError('`x1` must be an ndarray. A {} is found.'.format(type(x1)))
 
@@ -282,7 +281,7 @@ def x1_is_x2(
     return jnp.all(jnp.abs(diff) < eps)
 
 
-def _get_ndim(x: Union[int, Sized, jnp.ndarray]) -> int:
+def _get_ndim(x: int | Sized | jnp.ndarray) -> int:
   """Get number of dimensions given number of dimensions / shape / array."""
   if hasattr(x, 'ndim'):
     n = x.ndim
@@ -295,7 +294,7 @@ def _get_ndim(x: Union[int, Sized, jnp.ndarray]) -> int:
   return n
 
 
-def mod(axis: Axes, x: Union[int, Sized, jnp.ndarray]) -> list[int]:
+def mod(axis: Axes, x: int | Sized | jnp.ndarray) -> list[int]:
   """Makes `axis` non-negative given number of dimensions / shape / array."""
   n = _get_ndim(x)
   if isinstance(axis, int):
@@ -305,7 +304,7 @@ def mod(axis: Axes, x: Union[int, Sized, jnp.ndarray]) -> list[int]:
 
 def canonicalize_axis(
     axis: Axes,
-    x: Union[int, Sized, jnp.ndarray]
+    x: int | Sized | jnp.ndarray,
 ) -> list[int]:
   """Converts axis into a sorted non-negative list.
 
@@ -324,7 +323,7 @@ def canonicalize_axis(
 def zip_axes(
     x: jnp.ndarray,
     start_axis: int = 0,
-    end_axis: Optional[int] = None
+    end_axis: int | None = None,
 ) -> jnp.ndarray:
   """Zip (interleave) axes starting from `start_axis`.
 
@@ -342,9 +341,11 @@ def zip_axes(
   return _zip_axes(x, start_axis, end_axis, unzip=False)
 
 
-def unzip_axes(x: jnp.ndarray,
-               start_axis: int = 0,
-               end_axis: Optional[int] = None) -> jnp.ndarray:
+def unzip_axes(
+    x: jnp.ndarray,
+    start_axis: int = 0,
+    end_axis: int | None = None,
+) -> jnp.ndarray:
   """Unzip (de-interleave) axes starting from `start_axis`.
 
   Changes the shape as follows:
@@ -364,8 +365,8 @@ def unzip_axes(x: jnp.ndarray,
 def _zip_axes(
     x: jnp.ndarray,
     start_axis: int = 0,
-    end_axis: Optional[int] = None,
-    unzip: bool = False
+    end_axis: int | None = None,
+    unzip: bool = False,
 ) -> jnp.ndarray:
   """Zip/unzip (interleave/de-interleave) axes starting from `start_axis`.
 
@@ -405,7 +406,7 @@ def _zip_axes(
 def diagonal_between(
     x: jnp.ndarray,
     start_axis: int = 0,
-    end_axis: Optional[int] = None
+    end_axis: int | None = None,
 ) -> jnp.ndarray:
   """Returns the diagonal along all dimensions between start and end axes."""
   if end_axis is None:
@@ -464,7 +465,7 @@ _ArrayOrShape = TypeVar(
 
 def reverse_zipped(
     x: _ArrayOrShape,
-    start_axis: int = 0
+    start_axis: int = 0,
 ) -> _ArrayOrShape:
   if x is not None:
     ndim = _get_ndim(x)
@@ -481,17 +482,17 @@ def reverse_zipped(
 
 
 def mask(
-    x: Optional[jnp.ndarray],
-    mask_mat: Optional[jnp.ndarray]
-) -> Optional[jnp.ndarray]:
+    x: jnp.ndarray | None,
+    mask_mat: jnp.ndarray | None,
+) -> jnp.ndarray | None:
   if x is None or mask_mat is None:
     return x
   return jnp.where(mask_mat, jnp.zeros((), x.dtype), x)
 
 
 def size_at(
-    x: Union[_ArrayOrShape, core.ShapedArray],
-    axes: Optional[Iterable[int]] = None
+    x: _ArrayOrShape | core.ShapedArray,
+    axes: Iterable[int] | None = None,
 ) -> int:
   if hasattr(x, 'shape'):
     x = x.shape
@@ -506,7 +507,7 @@ def axis_after_dot(
     axis: int,
     contracting_dims: Sequence[int],
     batch_dims: Sequence[int],
-    lhs_ndim: Optional[int] = None
+    lhs_ndim: int | None = None,
 ) -> int:
   if axis in batch_dims:
     return batch_dims.index(axis)
@@ -521,10 +522,10 @@ def axis_after_dot(
 
 
 def make_2d(
-    x: Optional[jnp.ndarray],
+    x: jnp.ndarray | None,
     start_axis: int = 0,
-    end_axis: Optional[int] = None
-) -> Optional[jnp.ndarray]:
+    end_axis: int | None = None,
+) -> jnp.ndarray | None:
   """Makes `x` 2D from `start_axis` to `end_axis`, preserving other axes.
 
   `x` is assumed to follow the (`X, X, Y, Y, Z, Z`) axes layout.
@@ -605,10 +606,10 @@ def split_kwargs(kwargs, x1=None, x2=None):
   return kwargs1, kwargs2
 
 
-_SingleSlice = Union[int, slice, type(Ellipsis)]
+_SingleSlice = int | slice | type(Ellipsis)
 
 
-SliceType = Union[_SingleSlice, tuple[_SingleSlice, ...]]
+SliceType = _SingleSlice | tuple[_SingleSlice, ...]
 """A type to specify a slice of an array.
 
 For instance, when indexing `x[1, :, 2:8:3]` a slice tuple
@@ -621,8 +622,8 @@ slice, such as `nt.stax.Slice[1, :, 2:8:3]`.
 
 def canonicalize_idx(
     idx: SliceType,
-    ndim: int
-) -> tuple[Union[int, slice], ...]:
+    ndim: int,
+) -> tuple[int | slice, ...]:
   if idx is Ellipsis or isinstance(idx, (int, slice)):
     idx = (idx,) + (slice(None),) * (ndim - 1)
 

@@ -23,5 +23,5 @@ from ._src.predict import (
     max_learning_rate,
 
     ODEState,
-    Gaussian
+    Gaussian,
 )

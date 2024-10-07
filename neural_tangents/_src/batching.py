@@ -42,7 +42,7 @@ Example:
 """
 
 from functools import partial
-from typing import Any, Callable, Iterable, Optional, TypeVar, Union
+from typing import Any, Callable, Iterable, TypeVar
 import warnings
 
 import jax
@@ -57,7 +57,6 @@ import jax.numpy as jnp
 
 from jax.tree_util import tree_all
 from jax.tree_util import tree_flatten
-from jax.tree_util import tree_map
 from jax.tree_util import tree_unflatten
 
 import numpy as np
@@ -77,7 +76,7 @@ def batch(
     kernel_fn: _KernelFn,
     batch_size: int = 0,
     device_count: int = -1,
-    store_on_device: bool = True
+    store_on_device: bool = True,
 ) -> _KernelFn:
   """Returns a function that computes a kernel in batches over all devices.
 
@@ -114,7 +113,7 @@ def batch(
     kernel by batching over the dataset in parallel with the specified
     `batch_size` using `device_count` devices.
   """
-  # TODO(romann): find a way to avoid reading requirements.
+  # TODO: find a way to avoid reading requirements.
   input_req = getattr(kernel_fn, 'input_req', {})
   dropout_in_analytic_kernel = input_req.get('use_dropout', False)
   use_multidevice = device_count > 0 or (device_count == -1 and
@@ -143,13 +142,13 @@ _Output = TypeVar('_Output')
 def _scan(
     f: Callable[[_Carry, _Input], tuple[_Carry, _Output]],
     init: _Carry,
-    xs: Iterable[_Input]
+    xs: Iterable[_Input],
 ) -> tuple[_Carry, _Output]:
   """Implements an unrolled version of scan.
 
   Based on :obj:`jax.lax.scan` and has a similar API.
 
-  TODO(schsam): We introduce this function because lax.scan currently has a
+  TODO: We introduce this function because lax.scan currently has a
   higher peak memory usage than the unrolled version. We will aim to swap this
   out for lax.scan when issue #1273 and related have been resolved.
   """
@@ -161,13 +160,13 @@ def _scan(
     carry, y = f(carry, x)
     ys += [y]
 
-  return carry, tree_map(lambda *y: jnp.stack(y), *ys)
+  return carry, jax.tree.map(lambda *y: jnp.stack(y), *ys)
 
 
 def _flatten_batch_dimensions(
     k: jnp.ndarray,
     is_parallel: bool,
-    discard_axis: Optional[int] = None
+    discard_axis: int | None = None,
 ) -> jnp.ndarray:
   """Takes a kernel that has been evaluated in batches and flattens."""
 
@@ -195,7 +194,7 @@ def _flatten_batch_dimensions(
 def _flatten_kernel_dict(
     k: dict[str, Any],
     x2_is_none: bool,
-    is_parallel: bool
+    is_parallel: bool,
 ) -> dict[str, Any]:
   if 'nngp' in k:
     # We only use `batch_size` to compute `shape1` and `shape2` for the batch.
@@ -247,10 +246,10 @@ def _flatten_kernel_dict(
 
 @utils.nt_tree_fn(nargs=1)
 def _flatten_kernel(
-    k: Kernel,
+    k: Kernel | np.ndarray | jnp.ndarray,
     x2_is_none: bool,
-    is_parallel: bool
-) -> Kernel:
+    is_parallel: bool,
+) -> Kernel | np.ndarray | jnp.ndarray:
   """Flattens a kernel array or a `Kernel` along the batch dimension."""
 
   if hasattr(k, '_asdict') and hasattr(k, '_replace'):
@@ -263,15 +262,17 @@ def _flatten_kernel(
   elif isinstance(k, (np.ndarray, jnp.ndarray)):
     return _flatten_batch_dimensions(k, is_parallel)
 
-  raise TypeError(f'Expected kernel to be either a namedtuple, `Kernel`, or '
-                  f'`jnp.ndarray`, got {type(k)}.')
+  raise TypeError(
+      f'Expected kernel to be either a namedtuple, `Kernel`, or '
+      f'`jnp.ndarray`, got {type(k)}.'
+  )
 
 
 @utils.nt_tree_fn(nargs=1)
 def _reshape_kernel_for_pmap(
     k: Kernel,
     device_count: int,
-    n1_per_device: int
+    n1_per_device: int,
 ) -> Kernel:
   cov2 = k.cov2
   if cov2 is None:
@@ -288,7 +289,8 @@ def _reshape_kernel_for_pmap(
 
   nngp, ntk, cov1 = [
       jnp.reshape(x, (device_count, n1_per_device,) + x.shape[1:]) for x in
-      (k.nngp, k.ntk, k.cov1)]
+      (k.nngp, k.ntk, k.cov1)
+  ]
 
   return k.replace(
       nngp=nngp,
@@ -307,14 +309,14 @@ _ArrayOrKernel = TypeVar('_ArrayOrKernel', jnp.ndarray, Kernel)
 @utils.nt_tree_fn()
 def _set_cov2_to_none(k: _ArrayOrKernel) -> _ArrayOrKernel:
   if isinstance(k, Kernel):
-    k = k.replace(cov2=None)  # pytype: disable=attribute-error  # jax-ndarray
+    k = k.replace(cov2=None)
   return k
 
 
 def _serial(
     kernel_fn: _KernelFn,
     batch_size: int,
-    store_on_device: bool = True
+    store_on_device: bool = True,
 ) -> _KernelFn:
   """Returns a function that computes a kernel in batches serially.
 
@@ -360,14 +362,14 @@ def _serial(
 
   def serial_fn_x1(
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[Optional[jnp.ndarray]]] = None,
+      x2: NTTree[jnp.ndarray | None] | None = None,
       *args,
       **kwargs
   ) -> NTTree[Kernel]:
 
     x2_is_none = utils.all_none(x2)
     if x2_is_none:
-      # TODO(schsam): Only compute the upper triangular part of the kernel.
+      # TODO: Only compute the upper triangular part of the kernel.
       x2 = x1
 
     @utils.nt_tree_fn(reduce=lambda x: x[0])
@@ -425,12 +427,12 @@ def _serial(
 
     def get_n1_n2(k: NTTree[Kernel]) -> tuple[int, ...]:
       if utils.is_list_or_tuple(k):
-        # TODO(schsam): We might want to check for consistency here, but I can't
+        # TODO: We might want to check for consistency here, but I can't
         # imagine a case where we could get inconsistent kernels.
         return get_n1_n2(k[0])
 
       if isinstance(k, Kernel):
-        return k.nngp.shape[:2]  # pytype: disable=attribute-error
+        return k.nngp.shape[:2]
 
       raise TypeError(type(Kernel), Kernel)
 
@@ -466,7 +468,7 @@ def _serial(
       return _, _scan(col_fn, n1, (n2s, kwargs_np2))[1]
 
     def col_fn(n1, n2):
-      # NOTE(schsam): If we end up wanting to enable jit-of-batch then we will
+      # NOTE: If we end up wanting to enable jit-of-batch then we will
       # probably have to change this to dynamic slicing.
       n1, kwargs1 = n1
       n2, kwargs2 = n2
@@ -486,10 +488,12 @@ def _serial(
     return flatten(k, cov2_is_none)
 
   @utils.wraps(kernel_fn)
-  def serial_fn(x1_or_kernel: Union[NTTree[jnp.ndarray], NTTree[Kernel]],
-                x2: Optional[NTTree[Optional[jnp.ndarray]]] = None,
-                *args,
-                **kwargs) -> NTTree[Kernel]:
+  def serial_fn(
+      x1_or_kernel: NTTree[jnp.ndarray] | NTTree[Kernel],
+      x2: NTTree[jnp.ndarray | None] | None = None,
+      *args,
+      **kwargs,
+  ) -> NTTree[Kernel]:
     if utils.is_nt_tree_of(x1_or_kernel, (np.ndarray, jnp.ndarray)):
       return serial_fn_x1(x1_or_kernel, x2, *args, **kwargs)
     elif utils.is_nt_tree_of(x1_or_kernel, Kernel):
@@ -575,7 +579,7 @@ def _parallel(
   def parallel_fn_x1(x1, x2=None, *args, **kwargs):
     x2_is_none = utils.all_none(x2)
     if x2_is_none:
-      # TODO(schsam): Only compute the upper triangular part of the kernel.
+      # TODO: Only compute the upper triangular part of the kernel.
       x2 = x1
 
     def get_batch_size(x):
@@ -648,9 +652,9 @@ def _get_n_batches_and_batch_sizes(
     n1: int,
     n2: int,
     batch_size: int,
-    device_count: int
+    device_count: int,
 ) -> tuple[int, int, int, int]:
-  # TODO(romann): if dropout batching works for different batch sizes, relax.
+  # TODO: if dropout batching works for different batch sizes, relax.
   max_serial_batch_size = np.gcd(n1, n2) // device_count
 
   n2_batch_size = min(batch_size, max_serial_batch_size)
@@ -662,7 +666,7 @@ def _get_n_batches_and_batch_sizes(
   n1_batch_size = n2_batch_size * device_count
   n1_batches, ragged = divmod(n1, n1_batch_size)
   if ragged:
-    # TODO(schsam): Relax this constraint.
+    # TODO: Relax this constraint.
     msg = ('Number of rows of kernel must divide batch size. Found n1 = {} '
            'and batch size = {}.').format(n1, n1_batch_size)
     if device_count > 1:
@@ -672,7 +676,7 @@ def _get_n_batches_and_batch_sizes(
 
   n2_batches, ragged = divmod(n2, n2_batch_size)
   if ragged:
-    # TODO(schsam): Relax this constraint.
+    # TODO: Relax this constraint.
     raise ValueError(('Number of columns of kernel must divide batch '
                       'size. Found n2 = {} '
                       'and batch size = {}').format(n2, n2_batch_size))
@@ -682,7 +686,7 @@ def _get_n_batches_and_batch_sizes(
 def _is_np_ndarray(x) -> bool:
   if x is None:
     return False
-  return tree_all(tree_map(
+  return tree_all(jax.tree.map(
       lambda y: isinstance(y, (np.ndarray, jnp.ndarray)), x))
 
 
@@ -719,7 +723,7 @@ def _get_jit_or_pmap_broadcast():
 
     Raises:
       An error if `kwargs` have a `jnp.ndarray`.
-      TODO(romann): treat `jnp.ndarray`s in `kwargs` when JAX allows it. See
+      TODO: treat `jnp.ndarray`s in `kwargs` when JAX allows it. See
       https://github.com/google/jax/issues/912
     """
     key = (f, device_count)
@@ -727,18 +731,18 @@ def _get_jit_or_pmap_broadcast():
     if device_count == -1:
       device_count = jax.local_device_count()
 
-    # TODO(romann): adapt this when JAX allows `axis_in` for `pmap`.
+    # TODO: adapt this when JAX allows `axis_in` for `pmap`.
     def broadcast(arg: jnp.ndarray) -> jnp.ndarray:
       if device_count == 0:
         return arg
       return jnp.broadcast_to(arg, (device_count,) + arg.shape)
 
     @utils.wraps(f)
-    def f_pmapped(x_or_kernel: Union[jnp.ndarray, Kernel], *args, **kwargs):
+    def f_pmapped(x_or_kernel: jnp.ndarray | Kernel, *args, **kwargs):
       args_np, args_np_idxs = [], []
       args_other = {}
 
-      # TODO(romann): treat `jnp.ndarray`s in `kwargs` when JAX allows it.
+      # TODO: treat `jnp.ndarray`s in `kwargs` when JAX allows it.
       # https://github.com/google/jax/issues/912
       # Filter out `jnp.ndarray`s from other arguments.
       for i, arg in enumerate(args):
@@ -776,7 +780,7 @@ def _get_jit_or_pmap_broadcast():
         cache[_key] = _f
 
       # Broadcast `jnp.ndarray` arguments and apply the new function to them.
-      args_np = tree_map(broadcast, args_np)
+      args_np = jax.tree.map(broadcast, args_np)
       return _f(x_or_kernel, *args_np, **kwargs_np)
 
     return f_pmapped

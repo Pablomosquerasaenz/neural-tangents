@@ -50,7 +50,7 @@ prandom.seed(1)
         stax.Flatten(),
         stax.GlobalAvgPool(),
         stax.Identity()
-    ]
+    ],
 )
 class DiagonalTest(test_utils.NeuralTangentsTestCase):
 
@@ -132,7 +132,7 @@ class DiagonalClassTest(test_utils.NeuralTangentsTestCase):
 
 
 @test_utils.product(
-    same_inputs=[True, False]
+    same_inputs=[True, False],
 )
 class InputReqTest(test_utils.NeuralTangentsTestCase):
 

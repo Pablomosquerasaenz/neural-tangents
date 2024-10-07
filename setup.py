@@ -26,17 +26,18 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 
 INSTALL_REQUIRES = [
-    'jax>=0.4.16',
-    'frozendict>=2.3.8',
-    'tensorflow>=2.15.0',
-    'tf2jax>=0.3.5',
+    'jax>=0.4.34',
+    'frozendict>=2.4.5',
+    'tensorflow>=2.16.2',
+    'keras>=3.6.0',
+    'tf2jax>=0.3.6',
 ]
 
 
 TESTS_REQUIRES = [
-    'more-itertools',
-    'tensorflow-datasets',
-    'flax>=0.7.2',
+    'more-itertools>=10.5.0',
+    'tensorflow-datasets>=4.9.6',
+    'flax>=0.9.0',
 ]
 
 
@@ -116,11 +117,11 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     description='Fast and Easy Infinite Neural Networks in Python',
-    python_requires='>=3.9',
+    python_requires='>=3.10',
     classifiers=[
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: MacOS',
         'Operating System :: POSIX :: Linux',

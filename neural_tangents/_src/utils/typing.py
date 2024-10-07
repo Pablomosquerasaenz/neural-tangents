@@ -14,7 +14,7 @@
 
 """Common Type Definitions."""
 
-from typing import Any, Generator, Optional, Protocol, Sequence, TYPE_CHECKING, TypeVar, Union
+from typing import Any, Generator, Protocol, Sequence, TYPE_CHECKING, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -29,7 +29,7 @@ PyTree = Any
 """
 
 
-Axes = Union[int, Sequence[int]]
+Axes = int | Sequence[int]
 """Axes specification, can be integers (`axis=-1`) or sequences (`axis=(1, 3)`).
 """
 
@@ -37,11 +37,11 @@ Axes = Union[int, Sequence[int]]
 T = TypeVar('T')
 
 if TYPE_CHECKING:
-  NTTree = Union[T, list['NTTree[T]'], tuple['NTTree[T]', ...], T]
-  NTTrees = Union[list['NTTree[T]'], tuple['NTTree[T]', ...]]
+  NTTree = T | list['NTTree[T]'] | tuple['NTTree[T]', ...] | T
+  NTTrees = list['NTTree[T]'] | tuple['NTTree[T]', ...]
 else:
   # Can't use recursive types with `sphinx-autodoc-typehints`.
-  NTTree = Union[list[T], tuple[T, ...], T]
+  NTTree = list[T] | tuple[T, ...] | T
   """Neural Tangents Tree.
 
   Trees of kernels and arrays naturally emerge in certain neural
@@ -54,7 +54,7 @@ else:
   :class:`~neural_tangents.Kernel` objects.
   """
 
-  NTTrees = Union[list[T], tuple[T, ...]]
+  NTTrees = list[T] | tuple[T, ...]
   """A list or tuple of :class:`NTTree` s.
   """
 
@@ -79,7 +79,7 @@ class InitFn(Protocol):
       self,
       rng: jax.Array,
       input_shape: Shapes,
-      **kwargs
+      **kwargs,
   ) -> tuple[Shapes, PyTree]:
     ...
 
@@ -97,7 +97,7 @@ class ApplyFn(Protocol):
       params: PyTree,
       inputs: NTTree[jnp.ndarray],
       *args,
-      **kwargs
+      **kwargs,
   ) -> NTTree[jnp.ndarray]:
     ...
 
@@ -110,16 +110,16 @@ class MaskFn(Protocol):
 
   def __call__(
       self,
-      mask: Union[jnp.ndarray, Sequence[jnp.ndarray]],
+      mask: jnp.ndarray | Sequence[jnp.ndarray],
       input_shape: Shapes,
-  ) -> Union[jnp.ndarray, Sequence[jnp.ndarray]]:
+  ) -> jnp.ndarray | Sequence[jnp.ndarray]:
     ...
 
 
-KernelOrInput = Union[NTTree[Kernel], NTTree[jnp.ndarray]]
+KernelOrInput = NTTree[Kernel] | NTTree[jnp.ndarray]
 
 
-Get = Union[None, str, tuple[str, ...]]
+Get = None | str | tuple[str, ...]
 
 
 class LayerKernelFn(Protocol):
@@ -130,10 +130,7 @@ class LayerKernelFn(Protocol):
   types.
   """
 
-  def __call__(
-      self,
-      k: NTTree[Kernel]
-  ) -> NTTree[Kernel]:
+  def __call__(self, k: NTTree[Kernel], **kwargs) -> NTTree[Kernel]:
     ...
 
 
@@ -150,10 +147,10 @@ class AnalyticKernelFn(Protocol):
   def __call__(
       self,
       x1: KernelOrInput,
-      x2: Optional[NTTree[jnp.ndarray]] = None,
+      x2: NTTree[jnp.ndarray] | None = None,
       get: Get = None,
-      **kwargs
-  ) -> Union[NTTree[Kernel], NTTree[jnp.ndarray]]:
+      **kwargs,
+  ) -> NTTree[Kernel] | NTTree[jnp.ndarray]:
     ...
 
 
@@ -170,10 +167,10 @@ class EmpiricalGetKernelFn(Protocol):
   def __call__(
       self,
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[jnp.ndarray]],
+      x2: NTTree[jnp.ndarray] | None,
       get: Get,
       params: PyTree,
-      **kwargs
+      **kwargs,
   ) -> NTTree[jnp.ndarray]:
     ...
 
@@ -190,9 +187,9 @@ class EmpiricalKernelFn(Protocol):
   def __call__(
       self,
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[jnp.ndarray]],
+      x2: NTTree[jnp.ndarray] | None,
       params: PyTree,
-      **kwargs
+      **kwargs,
   ) -> NTTree[jnp.ndarray]:
     ...
 
@@ -207,19 +204,19 @@ class MonteCarloKernelFn(Protocol):
   def __call__(
       self,
       x1: NTTree[jnp.ndarray],
-      x2: Optional[NTTree[jnp.ndarray]],
+      x2: NTTree[jnp.ndarray] | None,
       get: Get = None,
-      **kwargs
-  ) -> Union[NTTree[jnp.ndarray], Generator[NTTree[jnp.ndarray], None, None]]:
+      **kwargs,
+  ) -> NTTree[jnp.ndarray] | Generator[NTTree[jnp.ndarray], None, None]:
     ...
 
 
-KernelFn = Union[
-    AnalyticKernelFn,
-    EmpiricalKernelFn,
-    EmpiricalGetKernelFn,
-    MonteCarloKernelFn,
-]
+KernelFn = (
+        AnalyticKernelFn |
+        EmpiricalKernelFn |
+        EmpiricalGetKernelFn |
+        MonteCarloKernelFn
+)
 
 
 InternalLayer = tuple[InitFn, ApplyFn, LayerKernelFn]
@@ -229,16 +226,16 @@ InternalLayerMasked = tuple[InitFn, ApplyFn, LayerKernelFn, MaskFn]
 Layer = tuple[InitFn, ApplyFn, AnalyticKernelFn]
 
 
-Kernels = Union[list[Kernel], tuple[Kernel, ...]]
+Kernels = list[Kernel] | tuple[Kernel, ...]
 """Kernel inputs/outputs of `FanOut`, `FanInSum`, etc.
 """
 
 
-_VMapAxis = Optional[PyTree]
+_VMapAxis = PyTree | None
 """A `PyTree` of integers.
 """
 
 VMapAxisTriple = tuple[_VMapAxis, _VMapAxis, dict[str, _VMapAxis]]
-VMapAxes = Union[_VMapAxis, VMapAxisTriple]
+VMapAxes = _VMapAxis | VMapAxisTriple
 """Specifies `(input, output, kwargs)` axes for `vmap` in empirical NTK.
 """

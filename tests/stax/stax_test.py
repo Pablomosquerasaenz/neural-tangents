@@ -87,14 +87,14 @@ def _get_inputs(
     key,
     same_inputs,
     shape,
-    fn=jnp.cos
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    fn=jnp.cos,
+) -> tuple[jnp.ndarray, jnp.ndarray | None]:
   key, split = random.split(key)
   x1 = fn(random.normal(key, shape))
   batch_axis = shape.index(BATCH_SIZE)
   shape = shape[:batch_axis] + (2 * BATCH_SIZE,) + shape[batch_axis + 1:]
   x2 = None if same_inputs else fn(random.normal(split, shape)) * 2
-  return x1, x2  # pytype: disable=bad-return-type  # jax-ndarray
+  return x1, x2
 
 
 def _get_net(W_std, b_std, filter_shape, is_conv, use_pooling, is_res, padding,
@@ -300,7 +300,7 @@ def _check_agreement_with_empirical(
     use_dropout,
     is_ntk,
     rtol=RTOL,
-    atol=ATOL
+    atol=ATOL,
 ):
   ((init_fn, apply_fn, kernel_fn),
    input_shape, device_count, channel_axis) = net
@@ -595,7 +595,7 @@ class StaxTest(test_utils.NeuralTangentsTestCase):
     input_size = 3
     width = 1024
 
-    # NOTE(schsam): It seems that convergence is slower when inputs are sparse.
+    # NOTE: It seems that convergence is slower when inputs are sparse.
     samples = N_SAMPLES
 
     if default_backend() == 'gpu':

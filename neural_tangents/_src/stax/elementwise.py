@@ -20,7 +20,7 @@ For details, please see "`Fast Neural Kernel Embeddings for General Activations
 
 import functools
 import operator as op
-from typing import Callable, Optional, Sequence
+from typing import Callable, Sequence
 import warnings
 
 import jax
@@ -49,7 +49,7 @@ from .requirements import supports_masking
 def Erf(
     a: float = 1.,
     b: float = 1.,
-    c: float = 0.
+    c: float = 0.,
 ) -> InternalLayer:
   """Affine transform of `Erf` nonlinearity, i.e. `a * Erf(b * x) + c`.
 
@@ -83,8 +83,8 @@ def Erf(
     def nngp_ntk_fn(
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
       square_root = _sqrt(prod - 4 * nngp**2)
       nngp = factor * jnp.arctan2(2 * nngp, square_root)
 
@@ -153,8 +153,8 @@ def Gabor() -> InternalLayer:
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
         sum_: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
       diff = 4 * (prod - nngp**2)
       denom = 2 * sum_ + diff + 1
       num = sum_ + diff + 2 * nngp
@@ -229,8 +229,8 @@ def Gelu(approximate: bool = False) -> InternalLayer:
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
         prod_plus_1: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
       delta_squared = prod_plus_1 - nngp**2
       delta = _sqrt(delta_squared)
       angles = jnp.arctan2(nngp, delta)
@@ -277,7 +277,7 @@ def Gelu(approximate: bool = False) -> InternalLayer:
 def Sin(
     a: float = 1.,
     b: float = 1.,
-    c: float = 0.
+    c: float = 0.,
 ) -> InternalLayer:
   """Affine transform of `Sin` nonlinearity, i.e. `a sin(b*x + c)`.
 
@@ -331,7 +331,7 @@ def Sin(
 def Cos(
     a: float = 1.,
     b: float = 1.,
-    c: float = 0.
+    c: float = 0.,
 ) -> InternalLayer:
   """Affine transform of `Cos` nonlinearity, i.e. `a cos(b*x + c)`.
 
@@ -405,7 +405,7 @@ def Rbf(gamma: float = 1.0) -> InternalLayer:
 def ABRelu(
     a: float,
     b: float,
-    do_stabilize: bool = False
+    do_stabilize: bool = False,
 ) -> InternalLayer:
   """ABReLU nonlinearity, i.e. `a * min(x, 0) + b * max(x, 0)`.
 
@@ -618,8 +618,8 @@ def Gaussian(a: float = 1, b: float = -1) -> InternalLayer:
     def nngp_ntk_fn(
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
       det = _sqrt((prod - factor * nngp**2))
 
       if ntk is not None:
@@ -652,7 +652,7 @@ def Gaussian(a: float = 1, b: float = -1) -> InternalLayer:
 def ExpNormalized(
     gamma: float = 1,
     shift: float = -1,
-    do_clip: bool = False
+    do_clip: bool = False,
 ) -> InternalLayer:
   """Simulates the "Gaussian normalized kernel".
 
@@ -779,8 +779,8 @@ def Monomial(degree: int) -> InternalLayer:
     def nngp_ntk_fn(
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
 
       def nngp_fn(nngp: jnp.ndarray, degree: int) -> jnp.ndarray:
         if degree == -1:
@@ -885,8 +885,8 @@ def RectifiedMonomial(degree: int) -> InternalLayer:
     def nngp_ntk_fn(
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
 
       sqrt_prod = _sqrt(prod)
       coeff = sqrt_prod**degree / (2 * jnp.pi)
@@ -944,7 +944,7 @@ def Polynomial(coef: Sequence[float]) -> InternalLayer:
   def kernel_fn(k: Kernel) -> Kernel:
     cov1, nngp, cov2, ntk = k.cov1, k.nngp, k.cov2, k.ntk
 
-    def r(n: Optional[jnp.ndarray], l: int) -> Optional[jnp.ndarray]:
+    def r(n: jnp.ndarray, l: int) -> jnp.ndarray | None:
       if n is None:
         return None
 
@@ -979,8 +979,8 @@ def Polynomial(coef: Sequence[float]) -> InternalLayer:
         nngp: jnp.ndarray,
         prod: jnp.ndarray,
         r_prods: Sequence[jnp.ndarray],
-        ntk: Optional[jnp.ndarray] = None
-    ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
+        ntk: jnp.ndarray | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
       ratio = nngp / _sqrt(prod)
 
       if ntk is not None:
@@ -995,8 +995,10 @@ def Polynomial(coef: Sequence[float]) -> InternalLayer:
 
       return nngp, ntk
 
-    def nngp_fn_diag(nngp: jnp.ndarray,
-                     r_prods: Sequence[jnp.ndarray]) -> jnp.ndarray:
+    def nngp_fn_diag(
+        nngp: jnp.ndarray,
+        r_prods: Sequence[jnp.ndarray],
+    ) -> jnp.ndarray:
       out = jnp.zeros_like(nngp)
       for l in range(degree):
         out += r_prods[l]
@@ -1022,9 +1024,9 @@ def Polynomial(coef: Sequence[float]) -> InternalLayer:
 @layer
 @supports_masking(remask_kernel=True)
 def Elementwise(
-    fn: Optional[Callable[[float], float]] = None,
-    nngp_fn: Optional[Callable[[float, float, float], float]] = None,
-    d_nngp_fn: Optional[Callable[[float, float, float], float]] = None
+    fn: Callable[[float], float] | None = None,
+    nngp_fn: Callable[[float, float, float], float] | None = None,
+    d_nngp_fn: Callable[[float, float, float], float] | None = None,
 ) -> InternalLayer:
   """Elementwise application of `fn` using provided `nngp_fn`.
 
@@ -1036,8 +1038,8 @@ def Elementwise(
   numerical integration or `nt.monte_carlo.monte_carlo_kernel_fn` to use Monte
   Carlo sampling.
 
-  If your function is implemented separately (e.g. `nt.stax.Relu` etc) it's best
-  to use the custom implementation, since it uses symbolically simplified
+  If your function is implemented separately (e.g. `nt.stax.Relu` etc.) it's
+  best to use the custom implementation, since it uses symbolically simplified
   expressions that are more precise and numerically stable.
 
   For details, please see "`Fast Neural Kernel Embeddings for General
@@ -1134,7 +1136,7 @@ def Elementwise(
 def ElementwiseNumerical(
     fn: Callable[[float], float],
     deg: int,
-    df: Optional[Callable[[float], float]] = None
+    df: Callable[[float], float] | None = None,
 ) -> InternalLayer:
   """Activation function using numerical integration.
 
@@ -1206,7 +1208,7 @@ def ElementwiseNumerical(
       q11, q22 = jnp.expand_dims(q11, xy_axes), jnp.expand_dims(q22, xy_axes)
 
       def integrate(f):
-        fvals = f(_sqrt(2 * q11) * x) * f(  # pytype: disable=wrong-arg-types  # jnp-type
+        fvals = f(_sqrt(2 * q11) * x) * f(
             nngp / _sqrt(q11 / 2, 1e-30) * x + _sqrt(
                 2*(q22 - nngp**2/q11)) * y)
         return jnp.tensordot(grid, fvals, (xy_axes, xy_axes)) / jnp.pi
@@ -1248,9 +1250,9 @@ def ElementwiseNumerical(
 
 
 def _elementwise(
-    fn: Optional[Callable[[float], float]],
+    fn: Callable[[float], float] | None,
     name: str,
-    kernel_fn: Optional[LayerKernelFn],
+    kernel_fn: LayerKernelFn | None,
 ) -> InternalLayer:
   init_fn = lambda rng, input_shape: (input_shape, ())
 
@@ -1291,7 +1293,7 @@ def _sqrt_jvp(tol, primals, tangents):
 
 
 @functools.partial(custom_jvp, nondiff_argnums=(2,))
-def _arctan2(x, y, fill_zero: Optional[float] = None):
+def _arctan2(x, y, fill_zero: float | None = None):
   if fill_zero is not None:
     return jnp.where(jnp.bitwise_and(x == 0., y == 0.),
                      fill_zero,
@@ -1314,9 +1316,9 @@ def _vmap_2d(
     fn: Callable[[float, float, float], float],
     cov12: jnp.ndarray,
     var1: jnp.ndarray,
-    var2: Optional[jnp.ndarray],
+    var2: jnp.ndarray | None,
     diagonal_batch: bool,
-    diagonal_spatial: bool
+    diagonal_spatial: bool,
 ) -> jnp.ndarray:
   """Effectively a "2D vmap" of `fn(cov12, var1, var2)`.
 

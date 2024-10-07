@@ -50,7 +50,7 @@ if not config.read('jax_enable_x64'):
 FLAT = 'FLAT'
 POOLING = 'POOLING'
 
-# TODO(schsam): Add a pooling test when multiple inputs are supported in
+# TODO: Add a pooling test when multiple inputs are supported in
 # Conv + Pooling.
 TRAIN_SIZES = [4, 8]
 TEST_SIZES = [6, 2]
@@ -114,12 +114,12 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
 
     if momentum is not None:
       # Test state-based prediction
-      state_0 = predict.ODEState(fx_train_0, fx_test_0)  # pytype:disable=wrong-arg-count
+      state_0 = predict.ODEState(fx_train_0, fx_test_0)  # pytype: disable=wrong-arg-count
       state_t0 = predictor(0.0, state_0, None, g_td)
       self.assertAllClose(state_0.fx_train, state_t0.fx_train)
       self.assertAllClose(state_0.fx_test, state_t0.fx_test)
 
-      state_train_only_0 = predict.ODEState(fx_train_0)  # pytype:disable=wrong-arg-count
+      state_train_only_0 = predict.ODEState(fx_train_0)  # pytype: disable=wrong-arg-count
       state_train_only_t0 = predictor(0.0, state_0, None, g_td)
       self.assertAllClose(state_train_only_0.fx_train,
                           state_train_only_t0.fx_train)
@@ -153,7 +153,7 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
     self.assertAllClose(fx_test_concat, fx_test_single)
 
     if momentum is not None:
-      state_0 = predict.ODEState(fx_train_0, fx_test_0)  # pytype:disable=wrong-arg-count
+      state_0 = predict.ODEState(fx_train_0, fx_test_0)  # pytype: disable=wrong-arg-count
       t_1 = (0, 0, 2)
       state_1 = predictor(ts[t_1], state_0, None, g_td)
       self.assertAllClose(fx_train_single[t_1], state_1.fx_train)
@@ -263,8 +263,7 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
 
   @classmethod
   def _cov_empirical(cls, x):
-    return jnp.einsum('itjk,itlk->tjl', x, x, optimize=True) / (x.shape[0] *  # pytype: disable=wrong-arg-types  # jnp-type
-                                                                x.shape[-1])
+    return jnp.einsum('itjk,itlk->tjl', x, x) / (x.shape[0] * x.shape[-1])
 
   @test_utils.product(
       train_size=TRAIN_SIZES[:1],
@@ -301,7 +300,7 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
     self.assertGreater(jnp.min(jnp.linalg.eigh(cov_train_inf)[0]), -1e-8)
 
     _kernel_fn = nt.empirical_kernel_fn(f)
-    # TODO(romann): figure out the slow compile on Ubuntu 22.04 CPU Python 3.9
+    # TODO: figure out the slow compile on Ubuntu 22.04 CPU Python 3.9
     kernel_fn = lambda x1, x2, params: _kernel_fn(x1, x2, 'ntk', params)
 
     def predict_empirical(key):
@@ -676,9 +675,11 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
 
         mean_emp = jnp.mean(ensemble_fx, axis=0, keepdims=True)
         mean_subtracted = ensemble_fx - mean_emp
-        cov_emp = jnp.einsum(  # pytype: disable=wrong-arg-types  # jnp-type
-            'ijk,ilk->jl', mean_subtracted, mean_subtracted, optimize=True) / (
-                mean_subtracted.shape[0] * mean_subtracted.shape[-1])
+        cov_emp = jnp.einsum(
+            'ijk,ilk->jl',
+            mean_subtracted,
+            mean_subtracted,
+        ) / (mean_subtracted.shape[0] * mean_subtracted.shape[-1])
 
         ntk = predict_fn_mse_ens(training_steps, x, 'ntk', compute_cov=True)
         self.assertAllClose(ravel_pytree(mean_emp)[0],
@@ -856,7 +857,7 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
 
                 def is_on_cpu(x):
                   return jax.tree_util.tree_all(
-                      jax.tree_map(
+                      jax.tree.map(
                           lambda x: 'cpu'
                           in str(x.addressable_shards[0].device).lower(),
                           x,
@@ -922,7 +923,7 @@ class PredictTest(test_utils.NeuralTangentsTestCase):
               p_train_mse, p_test_mse = predict_fn_mse(
                   ts, fx_train_0, fx_test_0, ntk_test_train)
               self.assertAllClose(y_test_shape, p_test_mse.shape)
-            self.assertAllClose(y_train_shape, p_train_mse.shape)  # pytype: disable=attribute-error  # jax-ndarray
+            self.assertAllClose(y_train_shape, p_train_mse.shape)
 
             p_nngp_mse_ens, p_ntk_mse_ens = predict_fn_mse_ensemble(
                 ts, x, ('nngp', 'ntk'), compute_cov=True)

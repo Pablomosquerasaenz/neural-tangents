@@ -15,6 +15,7 @@
 """Tests for `examples/experimental/empirical_ntk_tf.py`."""
 
 from absl.testing import absltest
+import jax
 
 from examples.experimental import empirical_ntk_tf
 
@@ -22,7 +23,8 @@ from examples.experimental import empirical_ntk_tf
 class EmpiricalNtkTfTest(absltest.TestCase):
 
   def test_empirical_ntk_tf_test(self):
-    empirical_ntk_tf.main(None)
+    with jax.numpy_rank_promotion('warn'):
+      empirical_ntk_tf.main(None)
 
 
 if __name__ == '__main__':

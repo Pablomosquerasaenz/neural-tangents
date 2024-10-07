@@ -104,7 +104,7 @@ from jax.example_libraries import stax
 init_fn, apply_fn = stax.serial(
     stax.Dense(512), stax.Relu,
     stax.Dense(512), stax.Relu,
-    stax.Dense(1)
+    stax.Dense(1),
 )
 
 key = random.PRNGKey(1)
@@ -123,7 +123,7 @@ from neural_tangents import stax
 init_fn, apply_fn, kernel_fn = stax.serial(
     stax.Dense(512), stax.Relu(),
     stax.Dense(512), stax.Relu(),
-    stax.Dense(1)
+    stax.Dense(1),
 )
 
 key1, key2 = random.split(random.PRNGKey(1))

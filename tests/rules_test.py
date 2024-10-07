@@ -17,7 +17,7 @@
 import itertools
 import logging
 import random
-from typing import Optional, Sequence
+from typing import Sequence
 import warnings
 
 from absl.testing import absltest
@@ -204,11 +204,11 @@ def _get_f_and_eqn(params, primitive, *inputs):
 
   else:
     if primitive is lax.pad_p:
-      # TODO(romann): find a way to call primitive.bind directly.
+      # TODO: find a way to call primitive.bind directly.
       f = lambda *inputs: lax.pad(*inputs, **params)
 
     elif primitive is lax.conv_general_dilated_p:
-      # TODO(romann): find a way to call primitive.bind directly.
+      # TODO: find a way to call primitive.bind directly.
       f = lambda *inputs: lax.conv_general_dilated(*inputs, **params)
 
     else:
@@ -486,7 +486,7 @@ class JacobianRulesTest(test_utils.NeuralTangentsTestCase):
 
   def _test_primitive(
       self,
-      primitive: Optional[Primitive],
+      primitive: Primitive | None,
       shapes,
       dtype,
       params
@@ -573,7 +573,7 @@ class JacobianRulesTest(test_utils.NeuralTangentsTestCase):
       for primitive in _UNARY_PRIMITIVES.keys()
       for params in _UNARY_PRIMITIVES[primitive](shape, dtype)
   )
-  def test_unary(self, primitive: Optional[Primitive], shape, dtype, params):
+  def test_unary(self, primitive: Primitive | None, shape, dtype, params):
     if primitive == lax.device_put_p:
       # Can't instantiate devices at test generation time; using subtests.
       devices = [None] + jax.devices() + jax.local_devices(backend='cpu')
@@ -602,13 +602,13 @@ class JacobianRulesTest(test_utils.NeuralTangentsTestCase):
   )
   def test_binary(
       self,
-      primitive: Optional[Primitive],
+      primitive: Primitive | None,
       shape1,
       shape2,
       dtype,
       params
   ):
-    # TODO(romann): revisit when bugs below are fixed.
+    # TODO: revisit when bugs below are fixed.
     if primitive == lax.conv_general_dilated_p:
       if jax.default_backend() == 'tpu':
         raise absltest.SkipTest('http://b/235167364')
@@ -633,7 +633,7 @@ class JacobianRulesTest(test_utils.NeuralTangentsTestCase):
       for primitive in _N_ARY_PRIMITIVES.keys()
       for params in _N_ARY_PRIMITIVES[primitive](*shapes)
   )
-  def test_n_ary(self, primitive: Optional[Primitive], shapes, dtype, params):
+  def test_n_ary(self, primitive: Primitive | None, shapes, dtype, params):
     self._test_primitive(primitive, shapes, dtype, params)
 
 

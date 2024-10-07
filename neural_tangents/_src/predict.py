@@ -29,7 +29,7 @@ set / timesteps.
 
 import collections
 from functools import lru_cache
-from typing import Any, Callable, Generator, Iterable, NamedTuple, Optional, Protocol, Union
+from typing import Any, Callable, Generator, Iterable, NamedTuple, Protocol
 
 import jax
 from jax import grad
@@ -37,7 +37,6 @@ from jax.experimental import ode
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax.tree_util import tree_all
-from jax.tree_util import tree_map
 import numpy as np
 import scipy as sp
 
@@ -51,7 +50,7 @@ from .utils.typing import KernelFn
 PyTree = Any
 
 
-ArrayOrScalar = Union[None, int, float, jnp.ndarray]
+ArrayOrScalar = None | int | float | jnp.ndarray
 """Alias for optional arrays or scalars."""
 
 
@@ -60,11 +59,11 @@ class PredictFn(Protocol):
 
   def __call__(
       self,
-      t: Optional[ArrayOrScalar] = None,
+      t: ArrayOrScalar = None,
       fx_train_0: ArrayOrScalar = 0.,
-      fx_test_0: Optional[ArrayOrScalar] = None,
-      k_test_train: Optional[jnp.ndarray] = None
-  ) -> Union[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray]]:
+      fx_test_0: ArrayOrScalar = None,
+      k_test_train: jnp.ndarray | None = None,
+  ) -> jnp.ndarray | tuple[jnp.ndarray | jnp.ndarray]:
     ...
 
 
@@ -74,7 +73,7 @@ def gradient_descent_mse(
     learning_rate: float = 1.,
     diag_reg: float = 0.,
     diag_reg_absolute_scale: bool = False,
-    trace_axes: Axes = (-1,)
+    trace_axes: Axes = (-1,),
 ) -> PredictFn:
   r"""Predicts the outcome of function space gradient descent training on MSE.
 
@@ -229,11 +228,11 @@ def gradient_descent_mse(
     return predict_fn_finite
 
   def predict_fn(
-      t: Optional[ArrayOrScalar] = None,
+      t: ArrayOrScalar = None,
       fx_train_0: ArrayOrScalar = 0.,
-      fx_test_0: Optional[ArrayOrScalar] = None,
-      k_test_train: Optional[jnp.ndarray] = None
-  ) -> Union[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray]]:
+      fx_test_0: ArrayOrScalar = None,
+      k_test_train: jnp.ndarray | None = None,
+  ) -> jnp.ndarray | tuple[jnp.ndarray | jnp.ndarray]:
     """Return output predictions on train [and test] set[s] at time[s] `t`.
 
     Args:
@@ -295,10 +294,10 @@ class ODEState:
     qx_test:
       test set auxiliary state variable (e.g. momentum).
   """
-  fx_train: Optional[jnp.ndarray] = None
-  fx_test: Optional[jnp.ndarray] = None
-  qx_train: Optional[jnp.ndarray] = None
-  qx_test: Optional[jnp.ndarray] = None
+  fx_train: jnp.ndarray | None = None
+  fx_test: jnp.ndarray | None = None
+  qx_train: jnp.ndarray | None = None
+  qx_test: jnp.ndarray | None = None
 
 
 class PredictFnODE(Protocol):
@@ -306,11 +305,11 @@ class PredictFnODE(Protocol):
 
   def __call__(
       self,
-      t: Optional[ArrayOrScalar] = None,
-      fx_train_or_state_0: Union[ArrayOrScalar, ODEState] = 0.,
-      fx_test_0: Optional[ArrayOrScalar] = None,
-      k_test_train: Optional[jnp.ndarray] = None
-  ) -> Union[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray], ODEState]:
+      t: ArrayOrScalar = None,
+      fx_train_or_state_0: ArrayOrScalar | ODEState = 0.,
+      fx_test_0: ArrayOrScalar = None,
+      k_test_train: jnp.ndarray | None = None,
+  ) -> jnp.ndarray | tuple[jnp.ndarray | jnp.ndarray] | ODEState:
     ...
 
 
@@ -319,8 +318,8 @@ def gradient_descent(
     k_train_train: jnp.ndarray,
     y_train: jnp.ndarray,
     learning_rate: float = 1.,
-    momentum: Optional[float] = None,
-    trace_axes: Axes = (-1,)
+    momentum: float | None = None,
+    trace_axes: Axes = (-1,),
 ) -> PredictFnODE:
   r"""Predicts the outcome of function space training using gradient descent.
 
@@ -467,11 +466,11 @@ def gradient_descent(
     return dstate_dt
 
   def predict_fn(
-      t: Optional[ArrayOrScalar] = None,
-      fx_train_or_state_0: Union[ArrayOrScalar, ODEState] = 0.,
-      fx_test_0: Optional[ArrayOrScalar] = None,
-      k_test_train: Optional[jnp.ndarray] = None
-  ) -> Union[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray], ODEState]:
+      t: ArrayOrScalar = None,
+      fx_train_or_state_0: ArrayOrScalar | ODEState = 0.,
+      fx_test_0: ArrayOrScalar = None,
+      k_test_train: jnp.ndarray | None = None,
+  ) -> jnp.ndarray | tuple[jnp.ndarray | jnp.ndarray] | ODEState:
     """Return output predictions on train [and test] set[s] at time[s] `t`.
 
     Args:
@@ -530,7 +529,7 @@ def gradient_descent(
 
     # Remove the added `t0`.
     trim = lambda x: x[1:].reshape(t_shape + x.shape[1:])
-    trim_tree = lambda tree: tree_map(trim, tree)
+    trim_tree = lambda tree: jax.tree.map(trim, tree)
     state_t = trim_tree(state_t)
 
     # `ODEState` -> `ODEState`
@@ -568,7 +567,8 @@ def gp_inference(
     y_train: jnp.ndarray,
     diag_reg: float = 0.,
     diag_reg_absolute_scale: bool = False,
-    trace_axes: Axes = (-1,)):
+    trace_axes: Axes = (-1,),
+):
   r"""Compute the mean and variance of the 'posterior' of NNGP/NTK/NTKGP.
 
   NNGP - the exact posterior of an infinitely wide Bayesian NN. NTK - exact
@@ -636,10 +636,10 @@ def gp_inference(
 
   @utils.get_namedtuple('Gaussians')
   def predict_fn(
-      get: Optional[Get] = None,
+      get: Get = None,
       k_test_train=None,
-      k_test_test=None
-  ) -> dict[str, Union[jnp.ndarray, Gaussian]]:
+      k_test_test=None,
+  ) -> dict[str, jnp.ndarray | Gaussian]:
     """`test`-set posterior given respective covariance matrices.
 
     Args:
@@ -758,7 +758,7 @@ def gradient_descent_mse_ensemble(
     diag_reg: float = 0.0,
     diag_reg_absolute_scale: bool = False,
     trace_axes: Axes = (-1,),
-    **kernel_fn_train_train_kwargs
+    **kernel_fn_train_train_kwargs,
 ):
   r"""Predicts the gaussian embedding induced by gradient descent on MSE loss.
 
@@ -862,7 +862,7 @@ def gradient_descent_mse_ensemble(
       if not any(g in k_dd_cache for g in get):
         k_dd_cache.update(
             kernel_fn(x_train, None, get,
-                      **kernel_fn_train_train_kwargs)._asdict())  # pytype: disable=attribute-error  # jax-ndarray
+                      **kernel_fn_train_train_kwargs)._asdict())
       else:
         for g in get:
           if g not in k_dd_cache:
@@ -889,9 +889,11 @@ def gradient_descent_mse_ensemble(
     return gp_inference(k_dd, y_train, diag_reg, diag_reg_absolute_scale,
                         trace_axes)
 
-  def get_kernels(get: Get, x_test: Optional[jnp.ndarray],
-                  compute_cov: bool,
-                  **kernel_fn_test_test_kwargs):
+  def get_kernels(
+      get: Get, x_test: jnp.ndarray | None,
+      compute_cov: bool,
+      **kernel_fn_test_test_kwargs,
+  ):
     get = _get_dependency(get, compute_cov)
     k_dd = get_k_train_train(get)
     if x_test is None:
@@ -902,7 +904,7 @@ def gradient_descent_mse_ensemble(
       args_test, _ = utils.split_kwargs(kernel_fn_test_test_kwargs, x_test)
 
       def is_array(x):
-        return tree_all(tree_map(
+        return tree_all(jax.tree.map(
             lambda x: isinstance(x, (np.ndarray, jnp.ndarray)), x))
 
       kwargs_td = dict(kernel_fn_train_train_kwargs)
@@ -943,11 +945,11 @@ def gradient_descent_mse_ensemble(
 
   @utils.get_namedtuple('Gaussians')
   def predict_fn(
-      t: Optional[ArrayOrScalar] = None,
-      x_test: Optional[jnp.ndarray] = None,
-      get: Optional[Get] = None,
+      t: ArrayOrScalar = None,
+      x_test: jnp.ndarray | None = None,
+      get: Get = None,
       compute_cov: bool = False,
-      **kernel_fn_test_test_kwargs
+      **kernel_fn_test_test_kwargs,
   ) -> dict[str, Gaussian]:
     """Return output mean and covariance on the test set at time[s] `t`.
 
@@ -1095,16 +1097,16 @@ def gradient_descent_mse_ensemble(
       else:
         out[g] = mean
 
-    return out  # pytype: disable=bad-return-type  # jnp-type
+    return out
 
   return predict_fn
 
 
 def max_learning_rate(
     ntk_train_train: jnp.ndarray,
-    y_train_size: Optional[int] = None,
+    y_train_size: int | None = None,
     momentum=0.,
-    eps: float = 1e-12
+    eps: float = 1e-12,
 ) -> float:
   r"""Computes the maximal feasible learning rate for infinite width NNs.
 
@@ -1138,12 +1140,13 @@ def max_learning_rate(
     The maximal feasible learning rate for infinite width NNs.
   """
   ntk_train_train = utils.make_2d(ntk_train_train)
-  factor = ntk_train_train.shape[0] if y_train_size is None else y_train_size  # pytype: disable=attribute-error  # jax-ndarray
+  factor = ntk_train_train.shape[0] if y_train_size is None else y_train_size
 
   if _is_on_cpu(ntk_train_train):
-    max_eva = sp.linalg.eigvalsh(ntk_train_train,
-                                 eigvals=(ntk_train_train.shape[0] - 1,  # pytype: disable=attribute-error  # jax-ndarray
-                                          ntk_train_train.shape[0] - 1))[-1]  # pytype: disable=attribute-error  # jax-ndarray
+    max_eva = sp.linalg.eigvalsh(
+        ntk_train_train,
+        subset_by_index=(ntk_train_train.shape[0] - 1,) * 2,
+    )[0]
   else:
     max_eva = jnp.linalg.eigvalsh(ntk_train_train)[-1]
   lr = 2 * (1 + momentum) * factor / (max_eva + eps)
@@ -1181,7 +1184,7 @@ def _get_fns_in_eigenbasis(
     k_train_train: jnp.ndarray,
     diag_reg: float,
     diag_reg_absolute_scale: bool,
-    fns: Iterable[Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]]
+    fns: Iterable[Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]],
 ) -> Generator[Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray], None, None]:
   """Build functions of a matrix in its eigenbasis.
 
@@ -1224,7 +1227,7 @@ def _get_fns_in_eigenbasis(
 def _add_diagonal_regularizer(
     A: jnp.ndarray,
     diag_reg: float,
-    diag_reg_absolute_scale: bool
+    diag_reg_absolute_scale: bool,
 ) -> jnp.ndarray:
   dimension = A.shape[0]
   if not diag_reg_absolute_scale:
@@ -1236,7 +1239,7 @@ def _get_cho_solve(
     A: jnp.ndarray,
     diag_reg: float,
     diag_reg_absolute_scale: bool,
-    lower: bool = False
+    lower: bool = False,
 ) -> Callable[[jnp.ndarray, Axes], jnp.ndarray]:
   x_non_channel_shape = A.shape[1::2]
   A = utils.make_2d(A)
@@ -1261,7 +1264,7 @@ def _get_cho_solve(
 def _get_fx_test_shape(
     y_train: jnp.ndarray,
     k_test_train: jnp.ndarray,
-    y_axes: Axes
+    y_axes: Axes,
 ) -> tuple[int, ...]:
   if k_test_train is None:
     return y_train.shape
@@ -1295,9 +1298,9 @@ def _make_inv_expm1_fn(normalization: float):
 
 
 def _check_inputs(
-    fx_train_or_state_0: Union[ArrayOrScalar, ODEState],
+    fx_train_or_state_0: ArrayOrScalar | ODEState,
     fx_test_0: ArrayOrScalar,
-    k_test_train: Optional[jnp.ndarray]
+    k_test_train: jnp.ndarray | None,
 ):
   if isinstance(fx_train_or_state_0, ODEState):
     if fx_test_0 is not None:
@@ -1349,7 +1352,7 @@ def _get_attr(k, g: str) -> jnp.ndarray:
 
 def _is_on_cpu(x: PyTree) -> bool:
   def _arr_is_on_cpu(x: jnp.ndarray) -> bool:
-    # TODO(romann): revisit when https://github.com/google/jax/issues/1431 and
+    # TODO: revisit when https://github.com/google/jax/issues/1431 and
     # https://github.com/google/jax/issues/1432 are fixed.
     if hasattr(x, 'addressable_shards'):
       # device_buffer is deprecated, so try addressable_shards first.
@@ -1362,4 +1365,4 @@ def _is_on_cpu(x: PyTree) -> bool:
 
     raise NotImplementedError(type(x))
 
-  return tree_all(tree_map(_arr_is_on_cpu, x))
+  return tree_all(jax.tree.map(_arr_is_on_cpu, x))

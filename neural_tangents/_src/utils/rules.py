@@ -15,7 +15,7 @@
 """Structured derivatives rules."""
 
 import functools
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable
 
 import jax
 from jax import lax
@@ -42,7 +42,7 @@ from .dataclasses import field
 class Structure:
   """Describes structure present in a primitive derivative dy/dw.
 
-  # TODO(romann): make this a python dataclass.
+  # TODO: make this a python dataclass.
 
   Attributes:
     out_trace:
@@ -96,8 +96,8 @@ class Structure:
   in_trace_idxs: tuple[int, ...] = field(False, default_factory=tuple)
 
   out_diagonal: tuple[int, ...] = field(False, default_factory=tuple)
-  in_diagonal: tuple[tuple[Optional[int], ...], ...] = field(
-      False, default_factory=tuple)
+  in_diagonal: tuple[tuple[int | None, ...], ...] = field(
+False, default_factory=tuple)
 
   out_broadcast: tuple[int, ...] = field(False, default_factory=tuple)
   out_broadcast_idxs: tuple[int, ...] = field(False, default_factory=tuple)
@@ -143,16 +143,16 @@ class Structure:
     )
 
 
-STRUCTURE_RULES: dict[Optional[Primitive], Callable[..., Structure]] = {}
-JACOBIAN_RULES: dict[Optional[Primitive], Callable[..., jnp.ndarray]] = {}
-EQN_PARAMS_RULES: dict[Optional[Primitive], Callable[..., dict[str, Any]]] = {}
+STRUCTURE_RULES: dict[Primitive | None, Callable[..., Structure]] = {}
+JACOBIAN_RULES: dict[Primitive | None, Callable[..., jnp.ndarray]] = {}
+EQN_PARAMS_RULES: dict[Primitive | None, Callable[..., dict[str, Any]]] = {}
 
 
 def get_structure(
-    eqn: Optional[JaxprEqn],
-    invals: list[Union[ShapedArray, AbstractValue]],
+    eqn: JaxprEqn | None,
+    invals: list[ShapedArray | AbstractValue],
     idx: int,
-    _s_rules: bool
+    _s_rules: bool,
 ) -> Structure:
   if any(i is AbstractValue for i in invals):
     raise TypeError(invals)
@@ -182,7 +182,7 @@ def get_structure(
     # No simplification rule found.
     structure = Structure()
 
-  # TODO(romann): can we avoid special-casing `reshape`s?
+  # TODO: can we avoid special-casing `reshape`s?
   if primitive == lax.reshape_p:
     cts_in = ShapedArray(invals[idx].shape, invals[idx].dtype)
 
@@ -211,7 +211,7 @@ def get_structure(
 
 def get_structure_cache(
     jaxpr: Jaxpr,
-    _s_rules: bool
+    _s_rules: bool,
 ) -> dict[Var, Structure]:
   """Associates a least common structure to each input variable of the `jaxpr`.
 
@@ -261,7 +261,7 @@ def get_structure_cache(
 
 def get_id_structure(
     inval: AbstractValue,
-    _s_rules: bool
+    _s_rules: bool,
 ) -> Structure:
   if not isinstance(inval, ShapedArray):
     raise TypeError(inval)
@@ -278,7 +278,7 @@ def get_id_structure(
 def _eye_like(out_shaped: ShapedArray, in_shaped: ShapedArray) -> jnp.ndarray:
   assert out_shaped.size == in_shaped.size, (out_shaped, in_shaped)
   eye = jnp.eye(out_shaped.size, dtype=out_shaped.dtype)
-  eye = eye.reshape(out_shaped.shape + in_shaped.shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  eye = eye.reshape(out_shaped.shape + in_shaped.shape)
   return eye
 
 
@@ -289,7 +289,7 @@ def _dot_general_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   contracting_dims, batch_dims = eqn.params['dimension_numbers']
   self, other = invals[idx], invals[1 if idx == 0 else 0]
@@ -318,7 +318,7 @@ def _dot_general_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   contracting_dims, batch_dims = eqn.params['dimension_numbers']
 
@@ -346,7 +346,7 @@ def _dot_general_j(
   self_nc_dims = tuple(i for i in range(self.ndim)
                        if i not in self_c_dims)
 
-  j = jnp.moveaxis(  # pytype: disable=wrong-arg-types  # jnp-type
+  j = jnp.moveaxis(
       other,
       other_b_dims + tuple(d[1]
                            for d in sorted(zip(self_c_dims, other_c_dims))),
@@ -391,7 +391,7 @@ def _conv_general_dilated_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   if idx != 1:
     raise NotImplementedError(eqn, idx)
@@ -437,7 +437,7 @@ def _conv_general_dilated_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   if idx != 1:
     raise NotImplementedError(eqn, idx)
@@ -522,7 +522,7 @@ def _conv_general_dilated_e(
     params: dict[str, Any],
     idx: int,
     trimmed_invals: list[ShapedArray],
-    trimmed_cts_in: ShapedArray
+    trimmed_cts_in: ShapedArray,
 ) -> dict[str, Any]:
   lhs, rhs = trimmed_invals
   dn = params['dimension_numbers']
@@ -546,7 +546,7 @@ def _add_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   inval = invals[idx]
 
@@ -597,11 +597,11 @@ def _add_j(
     idx: int,
     invals: list[ShapedArray],
     cts_in: ShapedArray,
-    is_sub: bool
+    is_sub: bool,
 ) -> jnp.ndarray:
   j = jnp.eye(utils.size_at(invals[idx]), dtype=invals[idx].dtype)
-  j = j.reshape(invals[idx].shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
-  j = jnp.broadcast_to(j, cts_in.shape + invals[idx].shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(invals[idx].shape * 2)
+  j = jnp.broadcast_to(j, cts_in.shape + invals[idx].shape)
   if is_sub and idx == 1:
     j = -j
   return j
@@ -620,7 +620,7 @@ def _mul_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   inval = invals[idx]
   ndim = inval.ndim
@@ -666,23 +666,23 @@ def _mul_s(
 def _mul_j(
     eqn: JaxprEqn,
     idx: int,
-    invals: list[Union[ShapedArray, jnp.ndarray]],
+    invals: list[ShapedArray | jnp.ndarray],
     cts_in: ShapedArray,
-    is_div: bool
+    is_div: bool,
 ) -> jnp.ndarray:
   if is_div and idx != 0:
     raise ValueError(eqn, idx)
 
   inval = invals[idx]
   if inval.size == 0:
-    return jnp.zeros(cts_in.shape + inval.shape, inval.dtype)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+    return jnp.zeros(cts_in.shape + inval.shape, inval.dtype)
 
   other = invals[1 if idx == 0 else 0]
   if is_div:
     other = jnp.ones((), other.dtype) / other
 
   if inval.ndim == 0:
-    return other  # pytype: disable=bad-return-type  # jax-ndarray
+    return other
 
   if other.ndim == 0:
     other = jnp.broadcast_to(other, inval.shape)
@@ -691,7 +691,7 @@ def _mul_j(
 
   j = jnp.broadcast_to(other, cts_in.shape).reshape((-1,))
   j = jnp.diag(j)
-  j = j.reshape(cts_in.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(cts_in.shape * 2)
 
   sum_axes = ()
   for i in range(inval.ndim):
@@ -715,7 +715,7 @@ def _concatenate_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   dimension = eqn.params['dimension']
 
@@ -732,7 +732,7 @@ def _concatenate_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   dimension = eqn.params['dimension']
 
@@ -749,11 +749,11 @@ def _concatenate_j(
       inval_i_size = np.prod(inval_i_shape)
       j = jnp.zeros((inval_i_size, inval.size), inval.dtype)
 
-    j = j.reshape(inval_i_shape + inval.shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+    j = j.reshape(inval_i_shape + inval.shape)
     js.append(j)
 
   j = lax.concatenate(js, dimension)
-  j = j.reshape(cts_in.shape + inval.shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(cts_in.shape + inval.shape)
   return j
 
 STRUCTURE_RULES[lax.concatenate_p] = _concatenate_s
@@ -767,7 +767,7 @@ def _rev_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   dimensions = eqn.params['dimensions']
   in_trace = out_trace = tuple(i for i in range(invals[idx].ndim)
@@ -785,7 +785,7 @@ def _rev_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   inval = invals[idx]
   j = _eye_like(cts_in, inval)
@@ -800,7 +800,7 @@ def _broadcast_in_dim_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   broadcast_dimensions = eqn.params['broadcast_dimensions']
 
@@ -823,14 +823,14 @@ def _broadcast_in_dim_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   inval = invals[idx]
   j = jnp.eye(inval.size, dtype=inval.dtype)
-  j = j.reshape(inval.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(inval.shape * 2)
   j = lax.broadcast_in_dim(
       j,
-      cts_in.shape + inval.shape,  # pytype: disable=unsupported-operands  # always-use-return-annotations
+      cts_in.shape + inval.shape,
       broadcast_dimensions=eqn.params['broadcast_dimensions'] +
       tuple(range(cts_in.ndim, cts_in.ndim + inval.ndim)))
   return j
@@ -839,7 +839,7 @@ def _broadcast_in_dim_e(
     params: dict[str, Any],
     idx: int,
     trimmed_invals: list[ShapedArray],
-    trimmed_cts_in: ShapedArray
+    trimmed_cts_in: ShapedArray,
 ) -> dict[str, Any]:
   # `broadcast_in_dim` is the only primitive JVP where we need to change
   # equation parameters in response to tweaking the inputs/cotangents
@@ -856,7 +856,7 @@ def _reduce_sum_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   axes = eqn.params['axes']
 
@@ -875,13 +875,13 @@ def _reduce_sum_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   inval = invals[idx]
   j = jnp.eye(cts_in.size, dtype=inval.dtype)
-  j = j.reshape(cts_in.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(cts_in.shape * 2)
   j = jnp.expand_dims(j, tuple(a + cts_in.ndim for a in eqn.params['axes']))
-  j = jnp.broadcast_to(j, cts_in.shape + inval.shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = jnp.broadcast_to(j, cts_in.shape + inval.shape)
   return j
 
 STRUCTURE_RULES[lax.reduce_sum_p] = _reduce_sum_s
@@ -892,7 +892,7 @@ def _reduce_window_sum_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   out_trace = ()
   for i in range(cts_in.ndim):
@@ -917,7 +917,7 @@ def _pad_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   padding_config = eqn.params['padding_config']
 
@@ -937,13 +937,13 @@ def _pad_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   padding_config = eqn.params['padding_config']
 
   inval = invals[idx]
   j = jnp.eye(inval.size, dtype=inval.dtype)
-  j = j.reshape(inval.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(inval.shape * 2)
   for _ in range(inval.ndim):
     padding_config += ((0, 0, 0),)
 
@@ -958,7 +958,7 @@ def _reshape_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   out_trace = tuple(range(invals[idx].ndim))
   if eqn.params['dimensions'] is None:
@@ -978,23 +978,23 @@ def _reshape_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   inval = invals[idx]
   j = _eye_like(inval, inval)
-  j = j.reshape(inval.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(inval.shape * 2)
 
   inval_dims = tuple(i + inval.ndim for i in range(inval.ndim))
   if eqn.params['dimensions'] is not None:
     j = lax.transpose(j, eqn.params['dimensions'] + inval_dims)
-  j = j.reshape(inval.shape + inval.shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(inval.shape + inval.shape)
   return j
 
 def _reshape_e(
     params: dict[str, Any],
     idx: int,
     trimmed_invals: list[ShapedArray],
-    trimmed_cts_in: ShapedArray
+    trimmed_cts_in: ShapedArray,
 ) -> dict[str, Any]:
   # Hack for more efficient `reshape` structure rule.
   params['new_sizes'] = trimmed_invals[idx].shape
@@ -1006,10 +1006,10 @@ EQN_PARAMS_RULES[lax.reshape_p] = _reshape_e
 
 
 def _eye_s(
-    eqn: Optional[JaxprEqn],
+    eqn: JaxprEqn | None,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   """Use this for elementwise-linear in `p` primitives `y(p, x)`.
 
@@ -1032,10 +1032,10 @@ def _eye_s(
   )
 
 def _eye_j(
-    eqn: Optional[JaxprEqn],
+    eqn: JaxprEqn | None,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   j = _eye_like(cts_in, invals[idx])
   return j
@@ -1050,7 +1050,7 @@ def _neg_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   j = _eye_like(cts_in, invals[idx])
   return -j
@@ -1063,9 +1063,9 @@ def _zeros_like_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
-  return jnp.zeros(cts_in.shape + invals[idx].shape, cts_in.dtype)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  return jnp.zeros(cts_in.shape + invals[idx].shape, cts_in.dtype)
 
 STRUCTURE_RULES[jax.interpreters.ad.zeros_like_p] = _eye_s
 JACOBIAN_RULES[jax.interpreters.ad.zeros_like_p] = _zeros_like_j
@@ -1075,7 +1075,7 @@ def _transpose_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   in_trace = tuple(range(cts_in.ndim))
   out_trace = tuple(eqn.params['permutation'].index(i) for i in in_trace)
@@ -1092,15 +1092,15 @@ def _transpose_j(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> jnp.ndarray:
   j = _eye_like(cts_in, invals[idx])
   inval = invals[idx]
-  j = j.reshape(inval.shape * 2)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(inval.shape * 2)
 
   inval_dims = tuple(i + cts_in.ndim for i in range(cts_in.ndim))
   j = lax.transpose(j, eqn.params['permutation'] + inval_dims)
-  j = j.reshape(cts_in.shape + invals[idx].shape)  # pytype: disable=unsupported-operands  # always-use-return-annotations
+  j = j.reshape(cts_in.shape + invals[idx].shape)
   return j
 
 STRUCTURE_RULES[lax.transpose_p] = _transpose_s
@@ -1111,7 +1111,7 @@ def _squeeze_s(
     eqn: JaxprEqn,
     idx: int,
     invals: list[ShapedArray],
-    cts_in: ShapedArray
+    cts_in: ShapedArray,
 ) -> Structure:
   out_trace = tuple(range(cts_in.ndim))
   in_trace = tuple(i for i in range(invals[idx].ndim)

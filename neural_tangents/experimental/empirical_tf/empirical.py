@@ -14,7 +14,7 @@
 
 """Experimental prototype of empirical NTK computation in Tensorflow.
 
-This module is applicable to :class:`tf.Module`, :class:`tf.keras.Model`, or
+This module is applicable to :class:`tf.Module`, :class:`keras.Model`, or
 :obj:`tf.function` functions, subject to some conditions (see docstring of
 :obj:`empirical_ntk_fn_tf`).
 
@@ -22,7 +22,7 @@ The kernel function follows the API of :obj:`neural_tangents.empirical_ntk_fn`.
 Please read the respective docstring for more details.
 
 .. warning::
-  This module currently appears to have long compile times (but OK runtime),
+  This module currently appears to have long compilation times (but OK runtime),
   is prone to triggering XLA errors, and does not distinguish between trainable
   and non-trainable parameters of the model.
 
@@ -30,15 +30,16 @@ For details about the empirical (finite width) NTK computation, please see
 "`Fast Finite Width Neural Tangent Kernel <https://arxiv.org/abs/2206.08720>`_".
 
 Example:
+  >>> import keras
   >>> import tensorflow as tf
-  >>> from tensorflow.keras import layers
+  >>> from keras import layers
   >>> import neural_tangents as nt
   >>> #
   >>> x_train = tf.random.normal((20, 32, 32, 3))
   >>> x_test = tf.random.normal((5, 32, 32, 3))
   >>> #
   >>> # A CNN.
-  >>> f = tf.keras.Sequential()
+  >>> f = keras.Sequential()
   >>> f.add(layers.Conv2D(32, (3, 3), activation='relu',
   >>>                     input_shape=x_train.shape[1:]))
   >>> f.add(layers.Conv2D(32, (3, 3), activation='relu'))
@@ -49,7 +50,7 @@ Example:
   >>> f.build((None, *x_train.shape[1:]))
   >>> _, params = nt.experimental.get_apply_fn_and_params(f)
   >>> #
-  >>> # Default setting: reducing over logits (default `trace_axes=(-1,)`;
+  >>> # Default setting: reducing over logits (default `trace_axes=(-1,)`);
   >>> # pass `vmap_axes=0` because the network is iid along the batch axis, no
   >>> # BatchNorm.
   >>> kernel_fn = nt.experimental.empirical_ntk_fn_tf(f, vmap_axes=0)
@@ -66,7 +67,7 @@ Example:
   >>> k_test_train = kernel_fn(x_test, x_train, params)
   >>> #
   >>> # An FCN
-  >>> f = tf.keras.Sequential()
+  >>> f = keras.Sequential()
   >>> f.add(layers.Flatten())
   >>> f.add(layers.Dense(1024, activation='relu'))
   >>> f.add(layers.Dense(1024, activation='relu'))
@@ -90,10 +91,11 @@ Example:
   >>> ntk_train_train_diag = ntk_fn(x_train, None, params)
 """
 
-from typing import Callable, Optional, Union
+from typing import Callable
 import warnings
 
 from jax.experimental import jax2tf
+import keras
 from neural_tangents._src.empirical import _DEFAULT_NTK_FWD
 from neural_tangents._src.empirical import _DEFAULT_NTK_J_RULES
 from neural_tangents._src.empirical import _DEFAULT_NTK_S_RULES
@@ -108,19 +110,19 @@ import tf2jax
 
 
 def empirical_ntk_fn_tf(
-    f: Union[tf.Module, tf.types.experimental.PolymorphicFunction],
+    f: tf.Module | tf.types.experimental.PolymorphicFunction | keras.Model,
     trace_axes: Axes = (-1,),
     diagonal_axes: Axes = (),
     vmap_axes: VMapAxes = None,
-    implementation: Union[NtkImplementation, int] = DEFAULT_NTK_IMPLEMENTATION,
+    implementation: NtkImplementation | int = DEFAULT_NTK_IMPLEMENTATION,
     _j_rules: bool = _DEFAULT_NTK_J_RULES,
     _s_rules: bool = _DEFAULT_NTK_S_RULES,
-    _fwd: Optional[bool] = _DEFAULT_NTK_FWD,
+    _fwd: bool | None = _DEFAULT_NTK_FWD,
 ) -> Callable[..., PyTree]:
   r"""Returns a function to draw a single sample the NTK of a given network `f`.
 
   This function follows the API of :obj:`neural_tangents.empirical_ntk_fn`, but
-  is applicable to Tensorflow :class:`tf.Module`, :class:`tf.keras.Model`, or
+  is applicable to Tensorflow :class:`tf.Module`, :class:`keras.Model`, or
   :obj:`tf.function`, via a TF->JAX->TF roundtrip using `tf2jax` and `jax2tf`.
   Docstring below adapted from :obj:`neural_tangents.empirical_ntk_fn`.
 
@@ -132,23 +134,22 @@ def empirical_ntk_fn_tf(
     compile times (but OK runtime), is prone to triggering XLA errors, and does
     not distinguish between trainable and non-trainable parameters of the model.
 
-  TODO(romann): support division between trainable and non-trainable variables.
+  TODO: support division between trainable and non-trainable variables.
 
-  TODO(romann): investigate slow compile times.
+  TODO: investigate slow compile times.
 
   Args:
     f:
-      :class:`tf.Module` or :obj:`tf.function` whose NTK we are computing. Must
-      satisfy the following:
+      :class:`tf.Module`, :class:`keras.Model`, or :obj:`tf.function` whose NTK
+      we are computing. Must satisfy the following:
 
         - if a :obj:`tf.function`, must have the signature of `f(params, x)`.
 
-        - if a :class:`tf.Module`, must be either a :class:`tf.keras.Model`, or
-          be callable.
+        - if a :class:`tf.Module`, must be be callable.
 
         - input signature (`f.input_shape` for :class:`tf.Module` or
-          :class:`tf.keras.Model`, or `f.input_signature` for `tf.function`)
-          must be known.
+          :class:`keras.Model`, or `f.input_signature` for `tf.function`) must
+          be known.
 
     trace_axes:
       output axes to trace the output kernel over, i.e. compute only the trace
@@ -247,7 +248,7 @@ def empirical_ntk_fn_tf(
       _s_rules=_s_rules,
       _fwd=_fwd,
   )
-  if isinstance(f, tf.Module):
+  if isinstance(f, (tf.Module, keras.Model)):
     apply_fn, _ = get_apply_fn_and_params(f)
 
   elif isinstance(f, tf.types.experimental.PolymorphicFunction):
@@ -264,7 +265,7 @@ def empirical_ntk_fn_tf(
   return ntk_fn
 
 
-def get_apply_fn_and_params(f: tf.Module):
+def get_apply_fn_and_params(f: tf.Module | keras.Model):
   """Converts a :class:`tf.Module` into a forward-pass `apply_fn` and `params`.
 
   Use this function to extract `params` to pass to the Tensorflow empirical NTK
@@ -276,16 +277,16 @@ def get_apply_fn_and_params(f: tf.Module):
 
   Args:
     f:
-      a :class:`tf.Module` to convert to a `apply_fn(params, x)` function. Must
-      have an `input_shape` attribute set (specifying shape of `x`), and be
-      callable or be a :class:`tf.keras.Model`.
+      a callable :class:`tf.Module` or a :class:`keras.Model` to convert to an
+      `apply_fn(params, x)` function. Must have an `input_shape` attribute set
+      (specifying shape of `x`).
 
   Returns:
     A tuple fo `(apply_fn, params)`, where `params` is a `PyTree[tf.Tensor]`.
   """
   @tf.function
   def forward_tf(x: PyTree) -> PyTree:
-    if isinstance(f, tf.keras.Model):
+    if isinstance(f, keras.Model):
       return f.call(x, training=False)
 
     if not hasattr(f, '__call__'):

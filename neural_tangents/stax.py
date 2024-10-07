@@ -77,7 +77,7 @@ Example:
 from ._src.stax.combinators import (
     parallel,
     serial,
-    repeat
+    repeat,
 )
 
 
@@ -131,7 +131,7 @@ from ._src.stax.linear import (
 
 # Helper object for the `Index` layer.
 from ._src.stax.linear import (
-    Slice
+    Slice,
 )
 
 

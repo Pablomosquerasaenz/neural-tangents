@@ -17,11 +17,11 @@
 from functools import partial
 
 from absl.testing import absltest
+import jax
 from jax import jit
 from jax import config
 from jax import random
 import jax.numpy as jnp
-from jax.tree_util import tree_map
 import neural_tangents as nt
 from neural_tangents import stax
 from neural_tangents._src import batching
@@ -37,7 +37,7 @@ FLAT = 'FLAT'
 POOLING = 'POOLING'
 INTERMEDIATE_CONV = 'INTERMEDIATE_CONV'
 
-# TODO(schsam): Add a pooling test when multiple inputs are supported in
+# TODO: Add a pooling test when multiple inputs are supported in
 # Conv + Pooling.
 TRAIN_SIZES = [2, 4, 8]
 TEST_SIZES = [2, 16]
@@ -89,8 +89,13 @@ def _empirical_kernel(key, input_shape, network, out_logits, use_dropout):
   return partial(kernel_fn, params=params, keys=split)
 
 
-def _theoretical_kernel(unused_key, input_shape, network, just_theta,
-                        use_dropout):
+def _theoretical_kernel(
+    unused_key,
+    input_shape,
+    network,
+    just_theta: bool,
+    use_dropout: bool,
+):
   _, _, _kernel_fn = _build_network(input_shape, network, 1, use_dropout)
 
   @jit
@@ -118,7 +123,7 @@ def _test_kernel_against_batched(
     batched_kernel_fn,
     train,
     test,
-    is_parallel_only=False
+    is_parallel_only=False,
 ):
   g = kernel_fn(train, None)
   g_b = batched_kernel_fn(train, None)
@@ -146,7 +151,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       network,
       test_size,
       train_size,
-      **kwargs
+      **kwargs,
   ):
     test_utils.stub_out_pmap(batching, 2)
     key = random.PRNGKey(0)
@@ -163,7 +168,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape=INPUT_SHAPES,
       network=NETWORK,
       kernel_type=list(KERNELS.keys()),
-      batch_size=[2, 8]
+      batch_size=[2, 8],
   )
   def testSerial(
       self,
@@ -172,14 +177,14 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape,
       network,
       kernel_type,
-      batch_size
+      batch_size,
   ):
     data_other, data_self, kernel_fn = self._get_data_and_kernel_fn(
         input_shape,
         kernel_type,
         network,
         test_size,
-        train_size
+        train_size,
     )
     kernel_batched = batching._serial(kernel_fn, batch_size=batch_size)
 
@@ -222,7 +227,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape=INPUT_SHAPES,
       network=NETWORK,
       kernel_type=list(KERNELS.keys()),
-      batch_size=[2, 8]
+      batch_size=[2, 8],
   )
   def testComposition(
       self,
@@ -231,7 +236,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape,
       network,
       kernel_type,
-      batch_size
+      batch_size,
   ):
     data_other, data_self, kernel_fn = self._get_data_and_kernel_fn(input_shape,
                                                                     kernel_type,
@@ -255,7 +260,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape=INPUT_SHAPES,
       network=NETWORK,
       kernel_type=list(KERNELS.keys()),
-      batch_size=[2, 8]
+      batch_size=[2, 8],
   )
   def testAutomatic(
       self,
@@ -264,14 +269,14 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
       input_shape,
       network,
       kernel_type,
-      batch_size
+      batch_size,
   ):
     data_other, data_self, kernel_fn = self._get_data_and_kernel_fn(
         input_shape,
         kernel_type,
         network,
         test_size,
-        train_size
+        train_size,
     )
 
     kernel_batched = batching.batch(kernel_fn, batch_size=batch_size)
@@ -361,14 +366,16 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
 
   def test_jit_or_pmap_broadcast(self):
 
-    def kernel_fn(x1,
-                  x2,
-                  do_flip,
-                  keys,
-                  do_square,
-                  params,
-                  _unused=None,
-                  p=0.65):
+    def kernel_fn(
+        x1,
+        x2,
+        do_flip,
+        keys,
+        do_square,
+        params,
+        _unused=None,
+        p=0.65,
+    ):
       res = jnp.abs(jnp.matmul(x1, x2))
       if do_square:
         res *= res
@@ -407,7 +414,9 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
               x1, x2, do_flip, keys, do_square, params, _unused=None)
           self.assertAllClose(res_1[0], res_2[0])
           self.assertAllClose(
-              tree_map(partial(jnp.expand_dims, axis=0), res_1[1]), res_2[1])
+              jax.tree.map(partial(jnp.expand_dims, axis=0), res_1[1]),
+              res_2[1],
+          )
 
     kernel_fn_pmapped = batching._jit_or_pmap_broadcast(kernel_fn,
                                                         device_count=2)
@@ -425,7 +434,7 @@ class BatchTest(test_utils.NeuralTangentsTestCase):
               x1, x2, do_flip, keys, do_square, params, _unused=None, p=0.2)
           self.assertAllClose(res_1[0][0], res_2[0][0])
           self.assertAllClose(res_1[0][1], res_2[0][1])
-          self.assertAllClose(tree_map(broadcast, res_1[1]), res_2[1])
+          self.assertAllClose(jax.tree.map(broadcast, res_1[1]), res_2[1])
 
   @test_utils.product(
       same_inputs=[True, False]

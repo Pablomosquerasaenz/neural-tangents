@@ -16,7 +16,7 @@
 
 import dataclasses
 import enum
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Sequence
 import warnings
 
 import frozendict
@@ -26,7 +26,6 @@ from jax import lax
 from jax import numpy as jnp
 from jax.core import ShapedArray
 from jax.tree_util import tree_all
-from jax.tree_util import tree_map
 import numpy as np
 
 from ..utils import dataclasses as nt_dataclasses
@@ -112,7 +111,7 @@ def requires(**static_reqs):
                                  f'`{key} == {v}`.')
 
             elif key in ('batch_axis', 'channel_axis'):
-              ndim = len(k.shape1)  # pytype: disable=attribute-error  # preserve-union-macros
+              ndim = len(k.shape1)
               v_kernel = getattr(k, key)
               v_pos = v % ndim
               if v_kernel != v_pos:
@@ -199,37 +198,47 @@ def supports_masking(remask_kernel: bool):
           return None
         return _mask_fn(mask, input_shape)
 
-      def apply_fn_with_masking(params, inputs, *,
-                                mask_constant=None, **kwargs):
-        masked_inputs = tree_map(
+      def apply_fn_with_masking(
+          params,
+          inputs,
+          *,
+          mask_constant=None,
+          **kwargs,
+      ):
+        masked_inputs = jax.tree.map(
             lambda x: _get_masked_array(x, mask_constant),
             inputs,
-            is_leaf=lambda x: isinstance(x, (jnp.ndarray, MaskedArray)))
+            is_leaf=lambda x: isinstance(x, (jnp.ndarray, MaskedArray)),
+        )
 
         is_leaf = lambda x: isinstance(x, MaskedArray)
-        inputs = tree_map(
+        inputs = jax.tree.map(
             lambda x: x.masked_value,
             masked_inputs,
-            is_leaf=is_leaf)
-        mask = tree_map(
+            is_leaf=is_leaf,
+        )
+        mask = jax.tree.map(
             lambda x: x.mask,
             masked_inputs,
-            is_leaf=is_leaf)
+            is_leaf=is_leaf,
+        )
 
         outputs = apply_fn(params, inputs, mask=mask, **kwargs)
-        outputs_mask = mask_fn(mask,
-                               inputs.shape if isinstance(inputs, jnp.ndarray)
-                               else [i.shape for i in inputs])
+        outputs_mask = mask_fn(
+            mask,
+            inputs.shape if isinstance(inputs, jnp.ndarray) else
+            [i.shape for i in inputs],
+        )
         if outputs_mask is None:
           return outputs
-        return MaskedArray(outputs, outputs_mask)  # pytype:disable=wrong-arg-count
+        return MaskedArray(outputs, outputs_mask)  # pytype: disable=wrong-arg-count
 
       def kernel_fn_with_masking(k: NTTree[Kernel], **user_reqs):
         is_leaf = lambda k: isinstance(k, Kernel)
-        mask1 = tree_map(lambda k: k.mask1, k, is_leaf=is_leaf)
-        shape1 = tree_map(lambda k: k.shape1, k, is_leaf=is_leaf)
-        mask2 = tree_map(lambda k: k.mask2, k, is_leaf=is_leaf)
-        shape2 = tree_map(lambda k: k.shape2, k, is_leaf=is_leaf)
+        mask1 = jax.tree.map(lambda k: k.mask1, k, is_leaf=is_leaf)
+        shape1 = jax.tree.map(lambda k: k.shape1, k, is_leaf=is_leaf)
+        mask2 = jax.tree.map(lambda k: k.mask2, k, is_leaf=is_leaf)
+        shape2 = jax.tree.map(lambda k: k.shape2, k, is_leaf=is_leaf)
 
         mask1, mask2 = mask_fn(mask1, shape1), mask_fn(mask2, shape2)
 
@@ -240,7 +249,7 @@ def supports_masking(remask_kernel: bool):
         else:
           remask_fn = lambda k, m1, m2: k.replace(mask1=m1, mask2=m2)
 
-        k = tree_map(remask_fn, k, mask1, mask2, is_leaf=is_leaf)
+        k = jax.tree.map(remask_fn, k, mask1, mask2, is_leaf=is_leaf)
         return k
 
       if _has_req(kernel_fn):
@@ -280,10 +289,10 @@ def unmask_fn(fn: ApplyFn) -> ApplyFn:
     Function of same signature as `fn`, where the output :class:`MaskedArray` is
     replaced with the :class:`jax.numpy.ndarray` with masked entries zeroed-out.
   """
-  def unmask(x: Union[MaskedArray, jnp.ndarray]) -> jnp.ndarray:
+  def unmask(x: MaskedArray | jnp.ndarray) -> jnp.ndarray:
     if isinstance(x, MaskedArray):
       x = utils.mask(x.masked_value, x.mask)
-    return x  # pytype: disable=bad-return-type  # jax-ndarray
+    return x
 
   def is_leaf(x) -> bool:
     return isinstance(x, (jnp.ndarray, MaskedArray))
@@ -291,7 +300,7 @@ def unmask_fn(fn: ApplyFn) -> ApplyFn:
   @utils.wraps(fn)
   def fn_no_mask(*args, **kwargs):
     out = fn(*args, **kwargs)
-    out = tree_map(unmask, out, is_leaf=is_leaf)
+    out = jax.tree.map(unmask, out, is_leaf=is_leaf)
     return out
 
   return fn_no_mask
@@ -326,8 +335,8 @@ class MaskedArray:
 
 
 def _get_masked_array(
-    x: Union[None, jnp.ndarray, ShapedArray, MaskedArray],
-    mask_constant: Optional[float] = None
+    x: None | jnp.ndarray | ShapedArray | MaskedArray,
+    mask_constant: float | None = None,
 ) -> MaskedArray:
   """Return `x` with entries equal to `mask_constant` zeroed-out, and the mask.
 
@@ -373,7 +382,7 @@ _INPUT_REQ = 'input_req'
 
 def get_req(
     f: Callable,
-    default: Optional[frozendict.frozendict] = None
+    default: frozendict.frozendict | None = None,
 ) -> frozendict.frozendict:
   return getattr(f, _INPUT_REQ, default)
 
@@ -393,8 +402,8 @@ _DEFAULT_INPUT_REQ = frozendict.frozendict(
         'batch_axis': 0,
         'use_dropout': False,
         'channel_axis': -1,
-        'mask_constant': None
-    }
+        'mask_constant': None,
+    },
 )
 
 
@@ -518,7 +527,7 @@ class Diagonal:
 def _cov_diag_batch_diag_spatial(
     x: jnp.ndarray,
     batch_axis: int,
-    channel_axis: int
+    channel_axis: int,
 ) -> jnp.ndarray:
   ret = jnp.sum(x ** 2, axis=channel_axis)
   new_batch_axis = batch_axis - (1 if batch_axis > channel_axis else 0)
@@ -529,7 +538,7 @@ def _cov_diag_batch_diag_spatial(
 def _cov_diag_batch_full_spatial(
     x: jnp.ndarray,
     batch_axis: int,
-    channel_axis: int
+    channel_axis: int,
 ) -> jnp.ndarray:
   ret = lax.dot_general(x, x,
                         (((channel_axis,), (channel_axis,)),
@@ -543,7 +552,7 @@ def _cov_full_batch_full_spatial(
     x1: jnp.ndarray,
     x2: jnp.ndarray,
     batch_axis: int,
-    channel_axis: int
+    channel_axis: int,
 ) -> jnp.ndarray:
   ret = jnp.tensordot(x1, x2, (channel_axis, channel_axis))
   new_batch_axis = batch_axis - (1 if batch_axis > channel_axis else 0)
@@ -557,7 +566,7 @@ def _cov_full_batch_diag_spatial(
     x1: jnp.ndarray,
     x2: jnp.ndarray,
     batch_axis: int,
-    channel_axis: int
+    channel_axis: int,
 ) -> jnp.ndarray:
   diag_axes = tuple(i for i in range(x1.ndim)
                     if i != batch_axis and i != channel_axis)
@@ -573,7 +582,7 @@ def _cov_diag_batch(
     x: jnp.ndarray,
     diagonal_spatial: bool,
     batch_axis: int,
-    channel_axis: int
+    channel_axis: int,
 ) -> jnp.ndarray:
   if diagonal_spatial:
     ret = _cov_diag_batch_diag_spatial(x, batch_axis, channel_axis)
@@ -584,11 +593,11 @@ def _cov_diag_batch(
 
 def _cov(
     x1: jnp.ndarray,
-    x2: Optional[jnp.ndarray],
+    x2: jnp.ndarray | None,
     diagonal_spatial: bool,
     batch_axis: int,
-    channel_axis: int
-) -> Optional[jnp.ndarray]:
+    channel_axis: int,
+) -> jnp.ndarray:
   """Computes uncentered covariance (nngp) between two batches of inputs.
 
   Args:
@@ -640,16 +649,16 @@ def _cov(
 
 def _inputs_to_kernel(
     x1: jnp.ndarray,
-    x2: Optional[jnp.ndarray],
+    x2: jnp.ndarray | None,
     *,
     diagonal_batch: bool,
-    diagonal_spatial: Union[bool, Diagonal],
+    diagonal_spatial: bool | Diagonal,
     compute_ntk: bool,
     batch_axis: int,
-    channel_axis: Optional[int],
-    mask_constant: Optional[float],
+    channel_axis: int | None,
+    mask_constant: float | None,
     eps: float = 1e-12,
-    **kwargs
+    **kwargs,
 ) -> Kernel:
   """Transforms (batches of) inputs to a `Kernel`.
 
@@ -761,7 +770,7 @@ def _inputs_to_kernel(
   diagonal_spatial = bool(diagonal_spatial)
 
   if batch_axis != 0:
-    # TODO(romann): add support or clear error for batching.
+    # TODO: add support or clear error for batching.
     warnings.warn(f'!!! Non-leading (!= 0) batch dimension in the '
                   f'input layer is not supported for batching '
                   f'kernels, got batch_axis = {batch_axis}. !!!')
@@ -790,7 +799,7 @@ def _inputs_to_kernel(
     x = _get_masked_array(x, mask_constant)
     x, mask = x.masked_value, x.mask
 
-    # TODO(schsam): Think more about dtype automatic vs manual dtype promotion.
+    # TODO: think more about dtype automatic vs manual dtype promotion.
     x = x.astype(jax.dtypes.canonicalize_dtype(jnp.float64))
 
     if diagonal_batch:
@@ -804,11 +813,8 @@ def _inputs_to_kernel(
   x2, cov2, mask2 = get_x_cov_mask(x2)
   nngp = _cov(x1, x2, diagonal_spatial, batch_axis, channel_axis)
 
-  ntk = jnp.zeros((), nngp.dtype) if compute_ntk else None  # pytype: disable=attribute-error  # always-use-return-annotations
-  is_gaussian = False
-  is_reversed = False
+  ntk = jnp.zeros((), nngp.dtype) if compute_ntk else None
   x1_is_x2 = utils.x1_is_x2(x1, x2, eps=eps)
-  is_input = False
 
   return Kernel(
       cov1=cov1,
@@ -816,9 +822,9 @@ def _inputs_to_kernel(
       nngp=nngp,
       ntk=ntk,
       x1_is_x2=x1_is_x2,
-      is_gaussian=is_gaussian,
-      is_reversed=is_reversed,
-      is_input=is_input,
+      is_gaussian=False,
+      is_reversed=False,
+      is_input=False,
       diagonal_batch=diagonal_batch,
       diagonal_spatial=diagonal_spatial,
       shape1=x1.shape,
@@ -827,18 +833,18 @@ def _inputs_to_kernel(
       channel_axis=channel_axis,
       mask1=mask1,
       mask2=mask2,
-  )  # pytype:disable=wrong-keyword-args
+  )
 
 
 def _propagate_shape(
     init_fn: InitFn,
     apply_fn: ApplyFn,
     shaped: ShapedArray,
-    **kwargs
+    **kwargs,
 ) -> ShapedArray:
   """Statically, abstractly, evaluate the init_fn to get shape information."""
   def init_and_apply(rng, x):
-    _, params = init_fn(rng, tree_map(lambda x: x.shape, x))
+    _, params = init_fn(rng, jax.tree.map(lambda x: x.shape, x))
     return apply_fn(params, x, rng=rng, **kwargs)
   akey = jax.eval_shape(jax.random.PRNGKey, 0)
   try:
@@ -859,15 +865,21 @@ def _set_shapes(
     apply_fn: ApplyFn,
     in_kernel: NTTree[Kernel],
     out_kernel: NTTree[Kernel],
-    **kwargs
+    **kwargs,
 ) -> NTTree[Kernel]:
   """Apply a kernel_fn to a Kernel propagating side information."""
   is_leaf = lambda k: isinstance(k, Kernel)
 
-  shape1 = tree_map(lambda k: ShapedArray(k.shape1, k.nngp.dtype),
-                    in_kernel, is_leaf=is_leaf)
-  shape2 = tree_map(lambda k: ShapedArray(k.shape2, k.nngp.dtype),
-                    in_kernel, is_leaf=is_leaf)
+  shape1 = jax.tree.map(
+      lambda k: ShapedArray(k.shape1, k.nngp.dtype),
+      in_kernel,
+      is_leaf=is_leaf,
+  )
+  shape2 = jax.tree.map(
+      lambda k: ShapedArray(k.shape2, k.nngp.dtype),
+      in_kernel,
+      is_leaf=is_leaf,
+  )
 
   kwargs1, kwargs2 = utils.split_kwargs(kwargs)
 
@@ -876,13 +888,13 @@ def _set_shapes(
 
   set_shape_fn = lambda k, s1, s2: k.replace(shape1=s1.shape, shape2=s2.shape)
 
-  return tree_map(set_shape_fn, out_kernel, shape1, shape2, is_leaf=is_leaf)
+  return jax.tree.map(set_shape_fn, out_kernel, shape1, shape2, is_leaf=is_leaf)
 
 
 def _fuse_requirements(
     kernel_fn_reqs,
     default_reqs,
-    **user_reqs
+    **user_reqs,
 ) -> frozendict.frozendict:
   # Override static requirements with explicit user-specified requirements,
   # but only if they are less demanding, raise an error otherwise.
@@ -912,7 +924,7 @@ def _fuse_requirements(
 def _preprocess_kernel_fn(
     init_fn: InitFn,
     apply_fn: ApplyFn,
-    kernel_fn: LayerKernelFn
+    kernel_fn: LayerKernelFn,
 ) -> AnalyticKernelFn:
   """Returns a `kernel_fn` with additional arguments.
 
@@ -926,7 +938,7 @@ def _preprocess_kernel_fn(
   Returns:
     A new `kernel_fn` that does the same computation but accepts additional
     arguments to flexibly specify the required computation, and can be applied
-    to either a `Kernel' or a pair of `jnp.ndarrray`s.
+    to either a `Kernel` or a pair of `jnp.ndarrray`s.
   """
   # Set empty requirements if none specified.
   if not _has_req(kernel_fn):
@@ -943,26 +955,27 @@ def _preprocess_kernel_fn(
     compute_ntk = (get is None) or ('ntk' in get)
 
     if x2 is None:
-      x2 = tree_map(lambda x: None, x1)
+      x2 = jax.tree.map(lambda x: None, x1)
 
     def input_fn(x1, x2):
       return _inputs_to_kernel(x1, x2, compute_ntk=compute_ntk, **reqs)
-    kernel = tree_map(input_fn, x1, x2)
+    kernel = jax.tree.map(input_fn, x1, x2)
 
     out_kernel = kernel_fn(kernel, **kwargs)
     return _set_shapes(init_fn, apply_fn, kernel, out_kernel, **kwargs)
 
   @utils.get_namedtuple('AnalyticKernel')
-  def kernel_fn_any(x1_or_kernel: Union[NTTree[jnp.ndarray], NTTree[Kernel]],
-                    x2: Optional[NTTree[jnp.ndarray]] = None,
-                    get: Optional[Get] = None,
-                    *,
-                    pattern: Optional[tuple[Optional[jnp.ndarray],
-                                            Optional[jnp.ndarray]]] = None,
-                    mask_constant: Optional[float] = None,
-                    diagonal_batch: Optional[bool] = None,
-                    diagonal_spatial: Optional[bool] = None,
-                    **kwargs):
+  def kernel_fn_any(
+      x1_or_kernel: NTTree[jnp.ndarray] | NTTree[Kernel],
+      x2: NTTree[jnp.ndarray] | None = None,
+      get: Get = None,
+      *,
+      pattern: tuple[jnp.ndarray | None, jnp.ndarray | None] | None = None,
+      mask_constant: float | None = None,
+      diagonal_batch: bool | None = None,
+      diagonal_spatial: bool | None = None,
+      **kwargs,
+  ):
     """Returns the `Kernel` resulting from applying `kernel_fn` to given inputs.
 
     Args:
@@ -1030,7 +1043,7 @@ def _preprocess_kernel_fn(
         return isinstance(x, (Kernel, jnp.ndarray, np.ndarray))
 
       return tree_all(
-          tree_map(
+          jax.tree.map(
               lambda x: isinstance(x, cls),
               x,
               is_leaf=is_leaf)
@@ -1055,10 +1068,10 @@ def _preprocess_kernel_fn(
 
 
 def get_diagonal(
-    cov: Optional[jnp.ndarray],
+    cov: jnp.ndarray | None,
     diagonal_batch: bool,
-    diagonal_spatial: bool
-) -> Optional[jnp.ndarray]:
+    diagonal_spatial: bool,
+) -> jnp.ndarray | None:
   """Extracts the diagonal of `cov` over all (sample, spatial) dimensions.
 
   Adapts computation if `cov` already stores only the diagonal along some
@@ -1076,13 +1089,13 @@ def get_diagonal(
 
 def get_diagonal_outer_prods(
     cov1: jnp.ndarray,
-    cov2: Optional[jnp.ndarray],
+    cov2: jnp.ndarray | None,
     diagonal_batch: bool,
     diagonal_spatial: bool,
     operation: Callable[[float, float], float],
     axis: Sequence[int] = (),
-    mask1: Optional[jnp.ndarray] = None,
-    mask2: Optional[jnp.ndarray] = None
+    mask1: jnp.ndarray | None = None,
+    mask2: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
   """Gets outer products of diagonals `cov1, cov1`, `cov1, cov2`, `cov2, cov2`.
 
@@ -1118,15 +1131,15 @@ def get_diagonal_outer_prods(
 
 
 def mean_and_var(
-    x: Optional[jnp.ndarray],
-    axis: Optional[Axes] = None,
-    dtype: Optional[jnp.dtype] = None,
-    out: Optional[None] = None,
+    x: jnp.ndarray | None,
+    axis: Axes | None = None,
+    dtype: jnp.dtype | None = None,
+    out: None = None,
     ddof: int = 0,
     keepdims: bool = False,
-    mask: Optional[jnp.ndarray] = None,
-    get_var: bool = False
-) -> tuple[Optional[jnp.ndarray], Optional[jnp.ndarray]]:
+    mask: jnp.ndarray | None = None,
+    get_var: bool = False,
+) -> tuple[jnp.ndarray | None, jnp.ndarray | None]:
   """`jnp.mean` and `jnp.var` taking the `mask` information into account."""
   var = None
   if x is None:

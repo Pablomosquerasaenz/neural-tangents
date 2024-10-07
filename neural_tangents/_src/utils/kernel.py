@@ -15,7 +15,7 @@
 """Class with infinite-width NTK and NNGP :class:`jax.numpy.ndarray` fields."""
 
 import operator as op
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Sequence
 
 from jax import lax
 import jax.numpy as jnp
@@ -32,7 +32,7 @@ class Kernel:
     nngp:
       covariance between the first and second batches (NNGP). A `jnp.ndarray` of
       shape
-      `(batch_size_1, batch_size_2, height, [height,], width, [width,], ...))`,
+      `(batch_size_1, batch_size_2, height, [height,], width, [width,], ...)`,
       where exact shape depends on `diagonal_spatial`.
 
     ntk:
@@ -122,10 +122,10 @@ class Kernel:
   """
 
   nngp: jnp.ndarray
-  ntk: Optional[jnp.ndarray]
+  ntk: jnp.ndarray | None
 
   cov1: jnp.ndarray
-  cov2: Optional[jnp.ndarray]
+  cov2: jnp.ndarray | None
   x1_is_x2: jnp.ndarray
 
   is_gaussian: bool = dataclasses.field(pytree_node=False)
@@ -135,14 +135,14 @@ class Kernel:
   diagonal_batch: bool = dataclasses.field(pytree_node=False)
   diagonal_spatial: bool = dataclasses.field(pytree_node=False)
 
-  shape1: Optional[tuple[int, ...]] = dataclasses.field(pytree_node=False)
-  shape2: Optional[tuple[int, ...]] = dataclasses.field(pytree_node=False)
+  shape1: tuple[int, ...] | None = dataclasses.field(pytree_node=False)
+  shape2: tuple[int, ...] | None = dataclasses.field(pytree_node=False)
 
   batch_axis: int = dataclasses.field(pytree_node=False)
   channel_axis: int = dataclasses.field(pytree_node=False)
 
-  mask1: Optional[jnp.ndarray] = None
-  mask2: Optional[jnp.ndarray] = None
+  mask1: jnp.ndarray | None = None
+  mask2: jnp.ndarray | None = None
 
   replace = ...  # type: Callable[..., 'Kernel']
   asdict = ...  # type: Callable[[], dict[str, Any]]
@@ -188,7 +188,7 @@ class Kernel:
                         ntk=ntk,
                         is_reversed=not self.is_reversed)
 
-  def transpose(self, axes: Optional[Sequence[int]] = None) -> 'Kernel':
+  def transpose(self, axes: Sequence[int] | None = None) -> 'Kernel':
     """Permute spatial dimensions of the `Kernel` according to `axes`.
 
     Follows
@@ -203,8 +203,8 @@ class Kernel:
     if axes is None:
       axes = tuple(range(len(self.shape1) - 2))
 
-    def permute(mat: Optional[jnp.ndarray],
-                batch_ndim: int) -> Optional[jnp.ndarray]:
+    def permute(mat: jnp.ndarray | None,
+                batch_ndim: int) -> jnp.ndarray | None:
       if mat is not None:
         _axes = tuple(batch_ndim + a for a in axes)
         if not self.diagonal_spatial:
@@ -223,8 +223,8 @@ class Kernel:
 
   def mask(
       self,
-      mask1: Optional[jnp.ndarray],
-      mask2: Optional[jnp.ndarray]
+      mask1: jnp.ndarray | None,
+      mask2: jnp.ndarray | None
   ) -> 'Kernel':
     """Mask all covariance matrices according to `mask1`, `mask2`."""
     mask11, mask12, mask22 = self._get_mask_prods(mask1, mask2)
@@ -245,11 +245,9 @@ class Kernel:
 
   def _get_mask_prods(
       self,
-      mask1: Optional[jnp.ndarray],
-      mask2: Optional[jnp.ndarray]
-  ) -> tuple[Optional[jnp.ndarray],
-             Optional[jnp.ndarray],
-             Optional[jnp.ndarray]]:
+      mask1: jnp.ndarray | None,
+      mask2: jnp.ndarray | None,
+  ) -> tuple[jnp.ndarray | None, jnp.ndarray | None, jnp.ndarray | None]:
     """Gets outer products of `mask1, mask1`, `mask1, mask2`, `mask2, mask2`."""
     def get_mask_prod(m1, m2, batch_ndim):
       if m1 is None and m2 is None:
@@ -286,8 +284,8 @@ class Kernel:
 
   def dot_general(
       self,
-      other1: Optional[jnp.ndarray],
-      other2: Optional[jnp.ndarray],
+      other1: jnp.ndarray | None,
+      other2: jnp.ndarray | None,
       is_lhs: bool,
       dimension_numbers: lax.DotDimensionNumbers
   ) -> 'Kernel':
@@ -380,11 +378,11 @@ class Kernel:
       return mat_non_c_dims[:n_b] + other_non_c_dims + mat_non_c_dims[n_b:]
 
     def dot(
-        mat: Optional[jnp.ndarray],
+        mat: jnp.ndarray | None,
         batch_ndim: int,
-        other1: Optional[jnp.ndarray] = None,
-        other2: Optional[jnp.ndarray] = None,
-    ) -> Optional[jnp.ndarray]:
+        other1: jnp.ndarray | None = None,
+        other2: jnp.ndarray | None = None,
+    ) -> jnp.ndarray | None:
       if mat is None or mat.ndim == 0 or other1 is None and other2 is None:
         return mat
 
@@ -403,7 +401,7 @@ class Kernel:
         other2_dims = get_other_dims(batch_ndim, False)
         operands += (other2, other2_dims)
 
-      return jnp.einsum(*operands, get_out_dims(batch_ndim), optimize=True)  # pytype: disable=wrong-arg-types  # jnp-type
+      return jnp.einsum(*operands, get_out_dims(batch_ndim))
 
     cov1 = dot(self.cov1, 1 if self.diagonal_batch else 2, other1, other1)
     cov2 = dot(self.cov2, 1 if self.diagonal_batch else 2, other2, other2)

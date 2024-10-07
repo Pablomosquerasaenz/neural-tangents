@@ -203,7 +203,7 @@ def parallel(*layers: Layer) -> InternalLayer:
 
 def _get_input_req_attr(
     kernel_fns: list[LayerKernelFn],
-    fold: Callable[[Diagonal, Diagonal], Diagonal]
+    fold: Callable[[Diagonal, Diagonal], Diagonal],
 ) -> dict[str, Any]:
   """Gets requirements of the combined layer based on individual requirements.
 
